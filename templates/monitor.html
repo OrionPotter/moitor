@@ -50,7 +50,7 @@
         </div>
         
         <div class="alert alert-info">
-            <strong>监控说明：</strong>当股票价格位于EMA144和EMA188之间时，表示可能进入加仓区域。
+            <strong>监控说明：</strong>当股票基本面处于低估,技术面加仓表示是一个比较合适的加仓机会。
         </div>
         
         <div class="table-responsive">
@@ -59,14 +59,14 @@
                     <tr>
                         <th>名称</th>
                         <th class="text-end">实时价格</th>
-                        <th class="text-end">EMA144</th>
-                        <th class="text-end">EMA188</th>
-                        <th class="text-end">EPS预测</th>
                         <th class="text-end">合理估值(PE)</th>
+                        <th class="text-end">EPS预测</th>
                         <th class="text-end">合理价格</th>
                         <th class="text-center">估值状态</th>
                         <th class="text-center">时间维度</th>
-                        <th class="text-center">状态</th>
+                        <th class="text-end">进场1</th>
+                        <th class="text-end">进场2</th>
+                        <th class="text-center">技术状态</th>
                     </tr>
                 </thead>
                 <tbody id="table-body">
@@ -117,10 +117,14 @@
                             '3d': '3日K线'
                         };
                         
-                        const statusBadge = inZone ? 
-                            '<span class="badge bg-success">在加仓区域</span>' : 
-                            '<span class="badge bg-danger">不在加仓区域</span>';
-                        
+                        let statusBadge;
+                                                if (stock.current_price < Math.min(stock.ema144, stock.ema188)) {
+                                                    statusBadge = '<span class="badge bg-warning">破位</span>';
+                                                } else if (inZone) {
+                                                    statusBadge = '<span class="badge bg-success">加仓</span>';
+                                                } else {
+                                                    statusBadge = '<span class="badge bg-danger">无信号</span>';
+                                                }                        
                         tr.className = inZone ? 'in-zone' : 'out-zone';
                         
                         // 格式化EPS预测显示
@@ -153,15 +157,15 @@
                         tr.innerHTML = `
                             <td><strong>${stock.name}</strong> <small class="text-muted">(${stock.code})</small></td>
                             <td class="text-end font-monospace">${formatMoney(stock.current_price)}</td>
-                            <td class="text-end font-monospace">${formatMoney(stock.ema144)}</td>
-                            <td class="text-end font-monospace">${formatMoney(stock.ema188)}</td>
-                            <td class="text-end font-monospace">${epsDisplay}</td>
                             <td class="text-end font-monospace">${stock.reasonable_pe || 15}</td>
+                            <td class="text-end font-monospace">${epsDisplay}</td>
                             <td class="text-end font-monospace">${reasonablePriceDisplay}</td>
                             <td class="text-center">${valuationStatus}</td>
                             <td class="text-center">
                                 <span class="badge bg-secondary badge-timeframe">${timeframeMap[stock.timeframe] || stock.timeframe}</span>
                             </td>
+                            <td class="text-end font-monospace">${formatMoney(stock.ema144)}</td>
+                            <td class="text-end font-monospace">${formatMoney(stock.ema188)}</td>
                             <td class="text-center">${statusBadge}</td>
                         `;
                         tbody.appendChild(tr);
