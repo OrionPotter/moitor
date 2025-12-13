@@ -28,7 +28,8 @@ def init_db():
             code TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             timeframe TEXT NOT NULL,
-            reasonable_pe REAL DEFAULT 15,
+            reasonable_pe_min REAL DEFAULT 15,
+            reasonable_pe_max REAL DEFAULT 20,
             enabled INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -44,6 +45,14 @@ def init_db():
             current_price REAL NOT NULL,
             ema144 REAL NOT NULL,
             ema188 REAL NOT NULL,
+            ema5 REAL,
+            ema10 REAL,
+            ema20 REAL,
+            ema30 REAL,
+            ema60 REAL,
+            ema7 REAL,
+            ema21 REAL,
+            ema42 REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(code, timeframe)
         )
@@ -164,16 +173,16 @@ def get_monitor_stock_by_code(code):
     conn.close()
     return stock
 
-def add_monitor_stock(code, name, timeframe, reasonable_pe=15):
+def add_monitor_stock(code, name, timeframe, reasonable_pe_min=15, reasonable_pe_max=20):
     """添加监控股票"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     try:
         cursor.execute('''
-            INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe)
-            VALUES (?, ?, ?, ?)
-        ''', (code, name, timeframe, reasonable_pe))
+            INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (code, name, timeframe, reasonable_pe_min, reasonable_pe_max))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
@@ -182,23 +191,23 @@ def add_monitor_stock(code, name, timeframe, reasonable_pe=15):
     finally:
         conn.close()
 
-def update_monitor_stock(code, name, timeframe, reasonable_pe=None, enabled=None):
+def update_monitor_stock(code, name, timeframe, reasonable_pe_min=None, reasonable_pe_max=None, enabled=None):
     """更新监控股票信息"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    if enabled is not None and reasonable_pe is not None:
+    if enabled is not None and reasonable_pe_min is not None and reasonable_pe_max is not None:
         cursor.execute('''
             UPDATE monitor_stocks
-            SET name = ?, timeframe = ?, reasonable_pe = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, timeframe = ?, reasonable_pe_min = ?, reasonable_pe_max = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
             WHERE code = ?
-        ''', (name, timeframe, reasonable_pe, enabled, code))
-    elif reasonable_pe is not None:
+        ''', (name, timeframe, reasonable_pe_min, reasonable_pe_max, enabled, code))
+    elif reasonable_pe_min is not None and reasonable_pe_max is not None:
         cursor.execute('''
             UPDATE monitor_stocks
-            SET name = ?, timeframe = ?, reasonable_pe = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, timeframe = ?, reasonable_pe_min = ?, reasonable_pe_max = ?, updated_at = CURRENT_TIMESTAMP
             WHERE code = ?
-        ''', (name, timeframe, reasonable_pe, code))
+        ''', (name, timeframe, reasonable_pe_min, reasonable_pe_max, code))
     elif enabled is not None:
         cursor.execute('''
             UPDATE monitor_stocks
@@ -249,7 +258,9 @@ def toggle_monitor_stock(code, enabled):
 
 # ========== 监控数据缓存相关操作 ==========
 
-def save_monitor_data(code, timeframe, current_price, ema144, ema188):
+def save_monitor_data(code, timeframe, current_price, ema144, ema188, 
+                     ema5=None, ema10=None, ema20=None, ema30=None, ema60=None,
+                     ema7=None, ema21=None, ema42=None):
     """保存监控数据到缓存表"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -257,9 +268,11 @@ def save_monitor_data(code, timeframe, current_price, ema144, ema188):
     try:
         cursor.execute('''
             INSERT OR REPLACE INTO monitor_data_cache 
-            (code, timeframe, current_price, ema144, ema188, created_at)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (code, timeframe, current_price, ema144, ema188))
+            (code, timeframe, current_price, ema144, ema188, ema5, ema10, ema20, 
+             ema30, ema60, ema7, ema21, ema42, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (code, timeframe, current_price, ema144, ema188, ema5, ema10, ema20,
+              ema30, ema60, ema7, ema21, ema42))
         conn.commit()
         return True
     except Exception as e:
@@ -275,7 +288,8 @@ def get_cached_monitor_data(code, timeframe, max_age_minutes=5):
     
     try:
         cursor.execute('''
-            SELECT current_price, ema144, ema188, created_at
+            SELECT current_price, ema144, ema188, ema5, ema10, ema20, 
+                   ema30, ema60, ema7, ema21, ema42, created_at
             FROM monitor_data_cache
             WHERE code = ? AND timeframe = ?
             AND datetime(created_at) > datetime('now', '-{} minutes')
@@ -362,22 +376,33 @@ def populate_initial_data():
     
     if monitor_count == 0:
         # 导入默认监控股票数据
-        default_monitor_stocks = [
-            ('sh601919', '中远海控', '1d', 15),
-            ('sz000895', '双汇发展', '1d', 20),
-            ('sh600938', '中国海油', '2d', 12),
-            ('sh600886', '国投电力', '3d', 18),
-            ('sh601169', '北京银行', '2d', 8)
-        ]
-        
-        for code, name, timeframe, reasonable_pe in default_monitor_stocks:
-            cursor.execute('''
-                INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe)
-                VALUES (?, ?, ?, ?)
-            ''', (code, name, timeframe, reasonable_pe))
+        try:
+            from config import MONITOR_STOCKS_CONFIG
+            for code, name, timeframe, reasonable_pe_min, reasonable_pe_max in MONITOR_STOCKS_CONFIG:
+                cursor.execute('''
+                    INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (code, name, timeframe, reasonable_pe_min, reasonable_pe_max))
+            print(f"已从config.py导入 {len(MONITOR_STOCKS_CONFIG)} 条监控股票数据")
+        except ImportError:
+            print("未找到config.py文件，使用默认监控股票数据")
+            # 使用默认数据作为备选
+            default_monitor_stocks = [
+                ('sh601919', '中远海控', '1d', 15, 20),
+                ('sz000895', '双汇发展', '1d', 18, 25),
+                ('sh600938', '中国海油', '2d', 10, 15),
+                ('sh600886', '国投电力', '3d', 15, 22),
+                ('sh601169', '北京银行', '2d', 6, 10)
+            ]
+            
+            for code, name, timeframe, reasonable_pe_min, reasonable_pe_max in default_monitor_stocks:
+                cursor.execute('''
+                    INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (code, name, timeframe, reasonable_pe_min, reasonable_pe_max))
+            print(f"已导入 {len(default_monitor_stocks)} 条默认监控股票数据")
         
         conn.commit()
-        print(f"已导入 {len(default_monitor_stocks)} 条默认监控股票数据")
     
     conn.close()
 

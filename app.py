@@ -110,10 +110,11 @@ def api_monitor_stocks():
             'code': stock[1],
             'name': stock[2],
             'timeframe': stock[3],
-            'reasonable_pe': stock[7] if len(stock) > 7 and stock[7] is not None else 15,
-            'enabled': bool(stock[4]),
-            'created_at': stock[5],
-            'updated_at': stock[6]
+            'reasonable_pe_min': stock[4] if len(stock) > 4 and stock[4] is not None else 15,
+            'reasonable_pe_max': stock[5] if len(stock) > 5 and stock[5] is not None else 20,
+            'enabled': bool(stock[6]),
+            'created_at': stock[7],
+            'updated_at': stock[8]
         }
         stocks_dict.append(stock_dict)
     
@@ -126,10 +127,11 @@ def api_add_monitor_stock():
     code = data.get('code')
     name = data.get('name')
     timeframe = data.get('timeframe')
-    reasonable_pe = data.get('reasonable_pe', 15)
+    reasonable_pe_min = data.get('reasonable_pe_min', 15)
+    reasonable_pe_max = data.get('reasonable_pe_max', 20)
     
     from db import add_monitor_stock
-    success = add_monitor_stock(code, name, timeframe, reasonable_pe)
+    success = add_monitor_stock(code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
     if success:
         return jsonify({'status': 'success', 'message': '监控股票添加成功'})
     else:
@@ -141,11 +143,12 @@ def api_update_monitor_stock(code):
     data = request.get_json()
     name = data.get('name')
     timeframe = data.get('timeframe')
-    reasonable_pe = data.get('reasonable_pe')
+    reasonable_pe_min = data.get('reasonable_pe_min')
+    reasonable_pe_max = data.get('reasonable_pe_max')
     enabled = data.get('enabled')
     
     from db import update_monitor_stock
-    success = update_monitor_stock(code, name, timeframe, reasonable_pe, enabled)
+    success = update_monitor_stock(code, name, timeframe, reasonable_pe_min, reasonable_pe_max, enabled)
     if success:
         return jsonify({'status': 'success', 'message': '监控股票更新成功'})
     else:
@@ -185,27 +188,31 @@ def api_monitor():
     # 为每只股票添加合理估值数据（EPS预测已在data_fetcher中异步获取）
     for stock in stocks:
         try:
-            # 获取合理估值PE
+            # 获取合理估值PE范围
             monitor_stock = get_monitor_stock_by_code(stock['code'])
             if monitor_stock:
-                reasonable_pe = monitor_stock[7] if len(monitor_stock) > 7 and monitor_stock[7] is not None else 15
+                reasonable_pe_min = monitor_stock[4] if len(monitor_stock) > 4 and monitor_stock[4] is not None else 15
+                reasonable_pe_max = monitor_stock[5] if len(monitor_stock) > 5 and monitor_stock[5] is not None else 20
             else:
-                reasonable_pe = 15
+                reasonable_pe_min = 15
+                reasonable_pe_max = 20
             
-            stock['reasonable_pe'] = reasonable_pe
+            stock['reasonable_pe_min'] = reasonable_pe_min
+            stock['reasonable_pe_max'] = reasonable_pe_max
             
-            # 计算合理价格 = 合理估值PE * EPS预测
+            # 计算合理价格 = 合理估值PE最小值 * EPS预测
             eps_forecast = stock.get('eps_forecast')
-            if eps_forecast is not None and reasonable_pe is not None:
-                stock['reasonable_price'] = round(eps_forecast * reasonable_pe, 2)
+            if eps_forecast is not None and reasonable_pe_min is not None:
+                stock['reasonable_price'] = round(eps_forecast * reasonable_pe_min, 2)
             else:
                 stock['reasonable_price'] = None
             
-            print(f"{stock['name']} EPS:{eps_forecast}, PE:{reasonable_pe}, 合理价格:{stock['reasonable_price']}")
+            print(f"{stock['name']} EPS:{eps_forecast}, PE范围:{reasonable_pe_min}-{reasonable_pe_max}, 合理价格:{stock['reasonable_price']}")
             
         except Exception as e:
             print(f"获取 {stock['code']} 合理估值数据失败: {e}")
-            stock['reasonable_pe'] = 15
+            stock['reasonable_pe_min'] = 15
+            stock['reasonable_pe_max'] = 20
             stock['reasonable_price'] = None
     
     response_data = {

@@ -106,8 +106,12 @@
                         </select>
                     </div>
                     <div class="col-md-2 mb-3">
-                        <label for="monitor-reasonable-pe" class="form-label">合理估值(PE)</label>
-                        <input type="number" class="form-control" id="monitor-reasonable-pe" step="0.1" value="15" required>
+                        <label for="monitor-reasonable-pe-min" class="form-label">合理估值(PE)最小值</label>
+                        <input type="number" class="form-control" id="monitor-reasonable-pe-min" step="0.1" value="15" required>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <label for="monitor-reasonable-pe-max" class="form-label">合理估值(PE)最大值</label>
+                        <input type="number" class="form-control" id="monitor-reasonable-pe-max" step="0.1" value="20" required>
                     </div>
                     <div class="col-md-2 mb-3">
                         <button type="submit" class="btn btn-primary w-100">添加监控股票</button>
@@ -124,7 +128,7 @@
                         <th>股票代码</th>
                         <th>名称</th>
                         <th class="text-center">时间维度</th>
-                        <th class="text-end">合理估值(PE)</th>
+                        <th class="text-end">合理估值(PE)范围</th>
                         <th class="text-center">状态</th>
                         <th class="text-end">操作</th>
                     </tr>
@@ -311,11 +315,13 @@
                         '<span class="badge bg-success">启用</span>' : 
                         '<span class="badge bg-secondary">禁用</span>';
                     
+                    const peRange = `${stock.reasonable_pe_min || 15} - ${stock.reasonable_pe_max || 20}`;
+                    
                     tr.innerHTML = `
                         <td>${stock.code}</td>
                         <td>${stock.name}</td>
                         <td class="text-center">${timeframeMap[stock.timeframe] || stock.timeframe}</td>
-                        <td class="text-end">${stock.reasonable_pe || 15}</td>
+                        <td class="text-end">${peRange}</td>
                         <td class="text-center">${statusBadge}</td>
                         <td class="text-end">
                             <button class="btn btn-sm btn-outline-primary me-2" onclick="editMonitorStock(${JSON.stringify(stock).replace(/"/g, '&quot;')})">编辑</button>
@@ -338,10 +344,16 @@
             const code = document.getElementById('monitor-code').value.trim();
             const name = document.getElementById('monitor-name').value.trim();
             const timeframe = document.getElementById('monitor-timeframe').value;
-            const reasonablePe = document.getElementById('monitor-reasonable-pe').value;
+            const reasonablePeMin = document.getElementById('monitor-reasonable-pe-min').value;
+            const reasonablePeMax = document.getElementById('monitor-reasonable-pe-max').value;
             
-            if (!code || !name || !timeframe || !reasonablePe) {
+            if (!code || !name || !timeframe || !reasonablePeMin || !reasonablePeMax) {
                 alert('请填写所有字段');
+                return;
+            }
+            
+            if (parseFloat(reasonablePeMin) >= parseFloat(reasonablePeMax)) {
+                alert('合理估值最小值必须小于最大值');
                 return;
             }
             
@@ -349,7 +361,8 @@
                 code: code,
                 name: name,
                 timeframe: timeframe,
-                reasonable_pe: parseFloat(reasonablePe)
+                reasonable_pe_min: parseFloat(reasonablePeMin),
+                reasonable_pe_max: parseFloat(reasonablePeMax)
             };
             
             let url, method;
@@ -395,7 +408,8 @@
             document.getElementById('monitor-code').value = stock.code;
             document.getElementById('monitor-name').value = stock.name;
             document.getElementById('monitor-timeframe').value = stock.timeframe;
-            document.getElementById('monitor-reasonable-pe').value = stock.reasonable_pe || 15;
+            document.getElementById('monitor-reasonable-pe-min').value = stock.reasonable_pe_min || 15;
+            document.getElementById('monitor-reasonable-pe-max').value = stock.reasonable_pe_max || 20;
             
             // 禁用代码字段编辑
             document.getElementById('monitor-code').disabled = true;

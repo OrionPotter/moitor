@@ -64,13 +64,14 @@
                         <th class="text-end">合理价格</th>
                         <th class="text-center">估值状态</th>
                         <th class="text-center">时间维度</th>
+                        <th class="text-center">趋势</th>
                         <th class="text-end">进场1</th>
                         <th class="text-end">进场2</th>
                         <th class="text-center">技术状态</th>
                     </tr>
                 </thead>
                 <tbody id="table-body">
-                    <tr><td colspan="10" class="text-center p-4 text-muted">正在加载数据，请稍候...</td></tr>
+                    <tr><td colspan="11" class="text-center p-4 text-muted">正在加载数据，请稍候...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -140,13 +141,23 @@
                         let valuationStatus = '<span class="text-muted">-</span>';
                         let valuationClass = '';
                         
-                        if (stock.reasonable_price) {
-                            if (stock.current_price < stock.reasonable_price) {
-                                reasonablePriceDisplay = `<span class="text-primary">${formatMoney(stock.reasonable_price)}</span>`;
+                        if (stock.eps_forecast && stock.reasonable_pe_min && stock.reasonable_pe_max) {
+                            const minReasonablePrice = stock.eps_forecast * stock.reasonable_pe_min;
+                            const maxReasonablePrice = stock.eps_forecast * stock.reasonable_pe_max;
+                            
+                            // 合理价格使用最小值计算
+                            stock.reasonable_price = minReasonablePrice;
+                            
+                            if (stock.current_price < minReasonablePrice) {
+                                reasonablePriceDisplay = `<span class="text-primary">${formatMoney(minReasonablePrice)}</span>`;
                                 valuationStatus = '<span class="badge bg-success">低估</span>';
                                 valuationClass = 'table-success'; // 低估状态
+                            } else if (stock.current_price > maxReasonablePrice) {
+                                reasonablePriceDisplay = `<span class="text-warning">${formatMoney(minReasonablePrice)}</span>`;
+                                valuationStatus = '<span class="badge bg-danger">高估</span>';
+                                valuationClass = ''; // 高估状态
                             } else {
-                                reasonablePriceDisplay = `<span class="text-muted">${formatMoney(stock.reasonable_price)}</span>`;
+                                reasonablePriceDisplay = `<span class="text-muted">${formatMoney(minReasonablePrice)}</span>`;
                                 valuationStatus = '<span class="badge bg-secondary">正常</span>';
                                 valuationClass = ''; // 正常状态
                             }
@@ -154,16 +165,54 @@
                         
                         tr.className = inZone ? `in-zone ${valuationClass}` : `out-zone ${valuationClass}`;
                         
+                        // 趋势判断逻辑
+                        let trendBadge = '<span class="text-muted">-</span>';
+                        if (stock.ema5 && stock.ema10 && stock.ema20 && stock.timeframe === '1d') {
+                            // 日K线：EMA5 > EMA10 > EMA20 → 多头
+                            if (stock.ema5 > stock.ema10 && stock.ema10 > stock.ema20) {
+                                trendBadge = '<span class="badge bg-success">多头</span>';
+                            } else if (stock.ema5 < stock.ema10 && stock.ema10 < stock.ema20) {
+                                // EMA5 < EMA10 < EMA20 → 空头
+                                trendBadge = '<span class="badge bg-danger">空头</span>';
+                            } else {
+                                // 否则震荡
+                                trendBadge = '<span class="badge bg-secondary">震荡</span>';
+                            }
+                        } else if (stock.ema10 && stock.ema30 && stock.ema60 && stock.timeframe === '2d') {
+                            // 2日K线：EMA10 > EMA30 > EMA60 → 多头
+                            if (stock.ema10 > stock.ema30 && stock.ema30 > stock.ema60) {
+                                trendBadge = '<span class="badge bg-success">多头</span>';
+                            } else if (stock.ema10 < stock.ema30 && stock.ema30 < stock.ema60) {
+                                // EMA10 < EMA30 < EMA60 → 空头
+                                trendBadge = '<span class="badge bg-danger">空头</span>';
+                            } else {
+                                // 否则震荡
+                                trendBadge = '<span class="badge bg-secondary">震荡</span>';
+                            }
+                        } else if (stock.ema7 && stock.ema21 && stock.ema42 && stock.timeframe === '3d') {
+                            // 3日K线：EMA7 > EMA21 > EMA42 → 多头
+                            if (stock.ema7 > stock.ema21 && stock.ema21 > stock.ema42) {
+                                trendBadge = '<span class="badge bg-success">多头</span>';
+                            } else if (stock.ema7 < stock.ema21 && stock.ema21 < stock.ema42) {
+                                // EMA7 < EMA21 < EMA42 → 空头
+                                trendBadge = '<span class="badge bg-danger">空头</span>';
+                            } else {
+                                // 否则震荡
+                                trendBadge = '<span class="badge bg-secondary">震荡</span>';
+                            }
+                        }
+                        
                         tr.innerHTML = `
                             <td><strong>${stock.name}</strong> <small class="text-muted">(${stock.code})</small></td>
                             <td class="text-end font-monospace">${formatMoney(stock.current_price)}</td>
-                            <td class="text-end font-monospace">${stock.reasonable_pe || 15}</td>
+                            <td class="text-end font-monospace">${stock.reasonable_pe_min || 15} - ${stock.reasonable_pe_max || 20}</td>
                             <td class="text-end font-monospace">${epsDisplay}</td>
                             <td class="text-end font-monospace">${reasonablePriceDisplay}</td>
                             <td class="text-center">${valuationStatus}</td>
                             <td class="text-center">
                                 <span class="badge bg-secondary badge-timeframe">${timeframeMap[stock.timeframe] || stock.timeframe}</span>
                             </td>
+                            <td class="text-center">${trendBadge}</td>
                             <td class="text-end font-monospace">${formatMoney(stock.ema144)}</td>
                             <td class="text-end font-monospace">${formatMoney(stock.ema188)}</td>
                             <td class="text-center">${statusBadge}</td>
@@ -175,11 +224,11 @@
                     timeLabel.textContent = '最后更新: ' + data.timestamp;
 
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger p-4">数据加载失败</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger p-4">数据加载失败</td></tr>';
                 }
             } catch (error) {
                 console.error("Error:", error);
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger p-4">网络请求错误，请检查连接。</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger p-4">网络请求错误，请检查连接。</td></tr>';
             } finally {
                 // 恢复按钮状态
                 btn.disabled = false;

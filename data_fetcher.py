@@ -384,18 +384,42 @@ def process_single_stock(stock):
         # 首先尝试从缓存获取数据（5分钟内的数据）
         cached_data = get_cached_monitor_data(stock_code, timeframe, 5)
         if cached_data:
-            current_price, ema144, ema188, created_at = cached_data
-            result = {
-                'code': stock_code,
-                'name': stock_name,
-                'current_price': current_price,
-                'ema144': ema144,
-                'ema188': ema188,
-                'timeframe': timeframe,
-                'cached': True
-            }
-            print(f"使用缓存数据 {stock_code}: 当前价={current_price}, EMA144={ema144}, EMA188={ema188}")
-            return result
+            # 检查缓存数据的长度，兼容新旧格式
+            if len(cached_data) >= 11:
+                # 新格式：包含趋势EMA数据
+                (current_price, ema144, ema188, ema5, ema10, ema20, 
+                 ema30, ema60, ema7, ema21, ema42, created_at) = cached_data
+                result = {
+                    'code': stock_code,
+                    'name': stock_name,
+                    'current_price': current_price,
+                    'ema144': ema144,
+                    'ema188': ema188,
+                    'timeframe': timeframe,
+                    'cached': True
+                }
+                
+                # 添加趋势判断所需的EMA数据
+                if timeframe == '1d':
+                    result['ema5'] = ema5
+                    result['ema10'] = ema10
+                    result['ema20'] = ema20
+                elif timeframe == '2d':
+                    result['ema10'] = ema10
+                    result['ema30'] = ema30
+                    result['ema60'] = ema60
+                elif timeframe == '3d':
+                    result['ema7'] = ema7
+                    result['ema21'] = ema21
+                    result['ema42'] = ema42
+                
+                print(f"使用缓存数据 {stock_code}: 当前价={current_price}, EMA144={ema144}, EMA188={ema188}")
+                return result
+            else:
+                # 旧格式：只有基本EMA数据，需要重新获取
+                print(f"缓存数据格式过旧，重新获取 {stock_code} 的数据")
+        else:
+            print(f"缓存中没有 {stock_code} 的有效数据，重新获取...")
         
         # 缓存中没有有效数据，重新获取
         print(f"缓存中没有 {stock_code} 的有效数据，重新获取...")
@@ -419,9 +443,31 @@ def process_single_stock(stock):
         ema144 = calculate_ema(closing_prices, 144)
         ema188 = calculate_ema(closing_prices, 188)
         
+        # 根据时间维度计算趋势所需的EMA
+        ema5 = ema10 = ema20 = None
+        ema10_2d = ema30 = ema60 = None
+        ema7 = ema21 = ema42 = None
+        
+        if timeframe == '1d':
+            # 日K线：计算EMA5、EMA10、EMA20
+            ema5 = calculate_ema(closing_prices, 5)
+            ema10 = calculate_ema(closing_prices, 10)
+            ema20 = calculate_ema(closing_prices, 20)
+        elif timeframe == '2d':
+            # 2日K线：计算EMA10、EMA30、EMA60
+            ema10_2d = calculate_ema(closing_prices, 10)
+            ema30 = calculate_ema(closing_prices, 30)
+            ema60 = calculate_ema(closing_prices, 60)
+        elif timeframe == '3d':
+            # 3日K线：计算EMA7、EMA21、EMA42
+            ema7 = calculate_ema(closing_prices, 7)
+            ema21 = calculate_ema(closing_prices, 21)
+            ema42 = calculate_ema(closing_prices, 42)
+        
         if ema144 is not None and ema188 is not None:
-            # 保存到缓存
-            save_monitor_data(stock_code, timeframe, current_price, ema144, ema188)
+            # 保存到缓存（包含趋势所需的EMA数据）
+            save_monitor_data(stock_code, timeframe, current_price, ema144, ema188,
+                             ema5, ema10, ema20, ema30, ema60, ema7, ema21, ema42)
             
             result = {
                 'code': stock_code,
@@ -432,6 +478,21 @@ def process_single_stock(stock):
                 'timeframe': timeframe,
                 'cached': False
             }
+            
+            # 添加趋势判断所需的EMA数据
+            if timeframe == '1d':
+                result['ema5'] = ema5
+                result['ema10'] = ema10
+                result['ema20'] = ema20
+            elif timeframe == '2d':
+                result['ema10'] = ema10_2d
+                result['ema30'] = ema30
+                result['ema60'] = ema60
+            elif timeframe == '3d':
+                result['ema7'] = ema7
+                result['ema21'] = ema21
+                result['ema42'] = ema42
+            
             print(f"成功获取并缓存 {stock_code} 监控数据: 当前价={current_price}, EMA144={ema144}, EMA188={ema188}")
             return result
         else:
