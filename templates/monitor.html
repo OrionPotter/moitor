@@ -254,7 +254,7 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 更新中...';
             
             try {
-                const response = await fetch('/api/update-kline', {
+                const response = await fetch('/api/monitor/update-kline', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

@@ -153,18 +153,18 @@
         // 核心函数：从 API 获取股票数据并更新页面
         async function loadStocks() {
             try {
-                const response = await fetch('/api/stocks');
-                const stocks = await response.json();
+                const response = await fetch('/api/admin/stocks');
+                const result = await response.json();
                 
                 const tbody = document.getElementById('stocks-table-body');
                 tbody.innerHTML = '';
                 
-                if (stocks.length === 0) {
+                if (!result.data || result.data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-muted">暂无股票数据</td></tr>';
                     return;
                 }
                 
-                stocks.forEach(stock => {
+                result.data.forEach(stock => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td>${stock.code}</td>
@@ -261,7 +261,7 @@
             }
             
             try {
-                const response = await fetch(`/api/stocks/${code}`, {
+                const response = await fetch(`/api/admin/stocks/${code}`, {
                     method: 'DELETE'
                 });
                 
@@ -292,18 +292,18 @@
         // 加载监控股票数据
         async function loadMonitorStocks() {
             try {
-                const response = await fetch('/api/monitor-stocks');
-                const stocks = await response.json();
+                const response = await fetch('/api/admin/monitor-stocks');
+                const result = await response.json();
                 
                 const tbody = document.getElementById('monitor-table-body');
                 tbody.innerHTML = '';
                 
-                if (stocks.length === 0) {
+                if (!result.data || result.data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-muted">暂无监控股票数据</td></tr>';
                     return;
                 }
                 
-                stocks.forEach(stock => {
+                result.data.forEach(stock => {
                     const tr = document.createElement('tr');
                     const timeframeMap = {
                         '1d': '日K线',
@@ -422,7 +422,7 @@
             }
             
             try {
-                const response = await fetch(`/api/monitor-stocks/${code}`, {
+                const response = await fetch(`/api/admin/monitor-stocks/${code}`, {
                     method: 'DELETE'
                 });
                 
@@ -443,7 +443,7 @@
         // 启用/禁用监控股票
         async function toggleMonitorStock(code, enabled) {
             try {
-                const response = await fetch(`/api/monitor-stocks/${code}/toggle`, {
+                const response = await fetch(`/api/admin/monitor-stocks/${code}/toggle`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

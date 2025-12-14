@@ -77,7 +77,6 @@ Thumbs.db
 
 # ---- Environment Variables ----
 .env
-.env.*
 # ---- Custom ----
 # 忽略你项目自定义的缓存或临时目录
 tmp/

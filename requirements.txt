@@ -1,8 +1,5 @@
-akshare>=1.10.0
-flask
-flask_cors
-pandas
-numpy
-python-dotenv
-beautifulsoup4
-requests
+Flask==2.3.0
+Flask-CORS==4.0.0
+akshare==1.14.0
+pandas==2.0.0
+python-dotenv==1.0.0
