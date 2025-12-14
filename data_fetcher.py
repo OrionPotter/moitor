@@ -366,8 +366,8 @@ def process_single_stock(stock):
     timeframe = stock['timeframe']
     
     try:
-        # 首先尝试从缓存获取数据（5分钟内的数据）
-        cached_data = get_cached_monitor_data(stock_code, timeframe, 5)
+        # 首先尝试从缓存获取数据（30分钟内的数据）
+        cached_data = get_cached_monitor_data(stock_code, timeframe, 30)
         if cached_data:
             # 检查缓存数据的长度，兼容新旧格式
             if len(cached_data) >= 16:
@@ -600,15 +600,12 @@ def get_monitor_data():
             except Exception as e:
                 print(f"并发处理 {stock['code']} 时出现异常: {str(e)}")
     
-    # 检查哪些股票需要获取EPS数据（缓存中没有或为空的）
+    # 检查哪些股票需要获取EPS数据（EPS为空的都需要获取）
     stocks_need_eps = []
     for result in results:
-        # 如果是从缓存获取的数据且EPS为None，则需要获取EPS
-        if result.get('cached') and result.get('eps_forecast') is None:
+        # 所有EPS为None的股票都需要获取EPS数据
+        if result.get('eps_forecast') is None:
             stocks_need_eps.append(result)
-        # 如果不是从缓存获取的数据，EPS已经在process_single_stock中处理了
-        elif not result.get('cached'):
-            continue
     
     # 只对需要EPS数据的股票进行并发获取
     if stocks_need_eps:

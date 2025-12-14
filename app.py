@@ -1,296 +1,167 @@
 # app.py
+import os
+import datetime
+import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
-from data_fetcher import get_portfolio_data
-from db import get_all_stocks, add_stock, update_stock, delete_stock, get_stock_by_code
-import datetime
 
-# 初始化 Flask 应用
+from data_fetcher import get_portfolio_data
+
+# ================= 初始化 =================
+
 app = Flask(__name__)
-# 启用 CORS，解决开发时可能的跨域请求问题
 CORS(app)
 
-# ========== K线数据自动更新功能 ==========
+# ================= K线自动更新逻辑 =================
+
+def should_auto_update():
+    try:
+        from kline_manager import get_latest_kline_date
+        from db import get_enabled_monitor_stocks
+        from datetime import datetime, timedelta
+
+        monitor_stocks = get_enabled_monitor_stocks()
+        if not monitor_stocks:
+            return False, "没有配置监控股票"
+
+        latest_dates = []
+        for stock in monitor_stocks:
+            latest = get_latest_kline_date(stock[1])
+            if latest:
+                latest_dates.append(latest)
+
+        if not latest_dates:
+            return True, "未发现K线数据，需初始化"
+
+        latest_dt = datetime.strptime(max(latest_dates), "%Y-%m-%d")
+        now = datetime.now()
+        hours = (now - latest_dt).total_seconds() / 3600
+
+        if hours >= 24:
+            return True, f"距离上次更新 {hours:.1f} 小时"
+        if 9 <= now.hour <= 14 and latest_dt.date() < now.date():
+            return True, "交易时段需更新今日数据"
+
+        return False, f"{hours:.1f} 小时内已更新"
+
+    except Exception as e:
+        print(f"[{datetime.datetime.now():%H:%M:%S}] ❌ 更新判断失败: {e}")
+        return False, "判断失败"
+
 
 def auto_update_kline_data():
-    """
-    自动更新K线数据（应用启动时执行）
-    """
     try:
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 开始检查K线数据更新...")
-        
-        # 导入K线管理模块
-        from kline_manager import batch_update_kline_data
-        
-        # 执行增量更新（只更新超过1天未更新的股票）
-        success = batch_update_kline_data(force_update=False, max_workers=2)  # 降低并发数避免影响启动速度
-        
-        if success:
-            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] K线数据自动更新完成")
-        else:
-            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] K线数据自动更新部分失败")
-            
-    except Exception as e:
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] K线数据自动更新异常: {str(e)}")
+        print(f"[{datetime.datetime.now():%H:%M:%S}] 🔍 检查K线更新条件")
+        need, reason = should_auto_update()
 
-# 在后台线程中执行K线数据更新
-import threading
+        if not need:
+            print(f"[{datetime.datetime.now():%H:%M:%S}] ⏭ {reason}")
+            return
+
+        print(f"[{datetime.datetime.now():%H:%M:%S}] 🚀 {reason}，开始更新")
+        from kline_manager import batch_update_kline_data
+        batch_update_kline_data(force_update=False, max_workers=2)
+        print(f"[{datetime.datetime.now():%H:%M:%S}] ✅ K线更新完成")
+
+    except Exception as e:
+        print(f"[{datetime.datetime.now():%H:%M:%S}] ❌ 自动更新异常: {e}")
+
 
 def start_kline_update_thread():
-    """启动K线数据更新线程"""
-    update_thread = threading.Thread(target=auto_update_kline_data, daemon=True)
-    update_thread.start()
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] K线数据更新线程已启动")
+    if os.getenv("AUTO_UPDATE_KLINE", "true").lower() != "true":
+        print("⚠️ 已禁用自动K线更新")
+        return
 
-# 路由：首页
-# 当访问根路径 '/' 时，渲染 'index.html' 模板
-@app.route('/')
+    t = threading.Thread(target=auto_update_kline_data, daemon=True)
+    t.start()
+    print("🧵 K线更新后台线程已启动")
+
+# ================= 页面路由 =================
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-# 路由：管理页面
-@app.route('/admin')
+
+@app.route("/admin")
 def admin():
-    return render_template('admin.html')
+    return render_template("admin.html")
 
-# 路由：监控页面
-@app.route('/monitor')
+
+@app.route("/monitor")
 def monitor():
-    return render_template('monitor.html')
+    return render_template("monitor.html")
 
-# 路由：API 数据接口
-# 前端页面会通过 AJAX 请求这个地址来获取最新的 JSON 数据
-@app.route('/api/portfolio')
+# ================= API =================
+
+@app.route("/api/portfolio")
 def api_portfolio():
-    # 调用核心模块进行计算
     rows, summary = get_portfolio_data()
-    
-    # 构建返回给前端的 JSON 数据包
-    response_data = {
-        'status': 'success',
-        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'rows': rows,
-        'summary': summary
-    }
-    return jsonify(response_data)
+    return jsonify({
+        "status": "success",
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "rows": rows,
+        "summary": summary
+    })
 
-# 路由：管理API - 获取所有股票
-@app.route('/api/stocks', methods=['GET'])
-def api_stocks():
-    stocks = get_all_stocks()
-    # 转换为字典格式
-    stocks_dict = []
-    for stock in stocks:
-        stock_dict = {
-            'id': stock[0],
-            'code': stock[1],
-            'name': stock[2],
-            'cost_price': stock[3],
-            'shares': stock[4]
-        }
-        stocks_dict.append(stock_dict)
-    
-    return jsonify(stocks_dict)
+# ---------- 监控数据 ----------
 
-# 路由：管理API - 添加股票
-@app.route('/api/stocks', methods=['POST'])
-def api_add_stock():
-    data = request.get_json()
-    code = data.get('code')
-    name = data.get('name')
-    cost_price = float(data.get('cost_price'))
-    shares = int(data.get('shares'))
-    
-    success = add_stock(code, name, cost_price, shares)
-    if success:
-        return jsonify({'status': 'success', 'message': '股票添加成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '股票代码已存在'})
-
-# 路由：管理API - 更新股票
-@app.route('/api/stocks/<code>', methods=['PUT'])
-def api_update_stock(code):
-    data = request.get_json()
-    name = data.get('name')
-    cost_price = float(data.get('cost_price'))
-    shares = int(data.get('shares'))
-    
-    update_stock(code, name, cost_price, shares)
-    return jsonify({'status': 'success', 'message': '股票更新成功'})
-
-# 路由：管理API - 删除股票
-@app.route('/api/stocks/<code>', methods=['DELETE'])
-def api_delete_stock(code):
-    success = delete_stock(code)
-    if success:
-        return jsonify({'status': 'success', 'message': '股票删除成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '股票不存在'})
-
-# ========== 监控股票API ==========
-
-# 路由：监控API - 获取所有监控股票
-@app.route('/api/monitor-stocks', methods=['GET'])
-def api_monitor_stocks():
-    from db import get_all_monitor_stocks
-    stocks = get_all_monitor_stocks()
-    # 转换为字典格式
-    stocks_dict = []
-    for stock in stocks:
-        stock_dict = {
-            'id': stock[0],
-            'code': stock[1],
-            'name': stock[2],
-            'timeframe': stock[3],
-            'reasonable_pe_min': stock[4] if len(stock) > 4 and stock[4] is not None else 15,
-            'reasonable_pe_max': stock[5] if len(stock) > 5 and stock[5] is not None else 20,
-            'enabled': bool(stock[6]),
-            'created_at': stock[7],
-            'updated_at': stock[8]
-        }
-        stocks_dict.append(stock_dict)
-    
-    return jsonify(stocks_dict)
-
-# 路由：监控API - 添加监控股票
-@app.route('/api/monitor-stocks', methods=['POST'])
-def api_add_monitor_stock():
-    data = request.get_json()
-    code = data.get('code')
-    name = data.get('name')
-    timeframe = data.get('timeframe')
-    reasonable_pe_min = data.get('reasonable_pe_min', 15)
-    reasonable_pe_max = data.get('reasonable_pe_max', 20)
-    
-    from db import add_monitor_stock
-    success = add_monitor_stock(code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
-    if success:
-        return jsonify({'status': 'success', 'message': '监控股票添加成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '监控股票代码已存在'})
-
-# 路由：监控API - 更新监控股票
-@app.route('/api/monitor-stocks/<code>', methods=['PUT'])
-def api_update_monitor_stock(code):
-    data = request.get_json()
-    name = data.get('name')
-    timeframe = data.get('timeframe')
-    reasonable_pe_min = data.get('reasonable_pe_min')
-    reasonable_pe_max = data.get('reasonable_pe_max')
-    enabled = data.get('enabled')
-    
-    from db import update_monitor_stock
-    success = update_monitor_stock(code, name, timeframe, reasonable_pe_min, reasonable_pe_max, enabled)
-    if success:
-        return jsonify({'status': 'success', 'message': '监控股票更新成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '监控股票不存在'})
-
-# 路由：监控API - 删除监控股票
-@app.route('/api/monitor-stocks/<code>', methods=['DELETE'])
-def api_delete_monitor_stock(code):
-    from db import delete_monitor_stock
-    success = delete_monitor_stock(code)
-    if success:
-        return jsonify({'status': 'success', 'message': '监控股票删除成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '监控股票不存在'})
-
-# 路由：监控API - 启用/禁用监控股票
-@app.route('/api/monitor-stocks/<code>/toggle', methods=['POST'])
-def api_toggle_monitor_stock(code):
-    data = request.get_json()
-    enabled = data.get('enabled', True)
-    
-    from db import toggle_monitor_stock
-    success = toggle_monitor_stock(code, enabled)
-    if success:
-        status_text = '启用' if enabled else '禁用'
-        return jsonify({'status': 'success', 'message': f'监控股票{status_text}成功'})
-    else:
-        return jsonify({'status': 'error', 'message': '监控股票不存在'})
-
-# 路由：监控API - 获取EMA监控数据
-@app.route('/api/monitor')
+@app.route("/api/monitor")
 def api_monitor():
-    from data_fetcher import get_monitor_data
-    from db import get_monitor_stock_by_code
-    stocks = get_monitor_data()
-    
-    # 为每只股票添加合理估值数据（EPS预测已在data_fetcher中异步获取）
-    for stock in stocks:
-        try:
-            # 获取合理估值PE范围
-            monitor_stock = get_monitor_stock_by_code(stock['code'])
-            if monitor_stock:
-                reasonable_pe_min = monitor_stock[4] if len(monitor_stock) > 4 and monitor_stock[4] is not None else 15
-                reasonable_pe_max = monitor_stock[5] if len(monitor_stock) > 5 and monitor_stock[5] is not None else 20
-            else:
-                reasonable_pe_min = 15
-                reasonable_pe_max = 20
-            
-            stock['reasonable_pe_min'] = reasonable_pe_min
-            stock['reasonable_pe_max'] = reasonable_pe_max
-            
-            # 计算合理价格 = 合理估值PE最小值 * EPS预测
-            eps_forecast = stock.get('eps_forecast')
-            if eps_forecast is not None and reasonable_pe_min is not None:
-                stock['reasonable_price'] = round(eps_forecast * reasonable_pe_min, 2)
-            else:
-                stock['reasonable_price'] = None
-            
-            print(f"{stock['name']} EPS:{eps_forecast}, PE范围:{reasonable_pe_min}-{reasonable_pe_max}, 合理价格:{stock['reasonable_price']}")
-            
-        except Exception as e:
-            print(f"获取 {stock['code']} 合理估值数据失败: {e}")
-            stock['reasonable_pe_min'] = 15
-            stock['reasonable_pe_max'] = 20
-            stock['reasonable_price'] = None
-    
-    response_data = {
-        'status': 'success',
-        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'stocks': stocks
-    }
-    return jsonify(response_data)
-
-# 路由：手动更新K线数据API
-@app.route('/api/update-kline', methods=['POST'])
-def api_update_kline():
-    """手动更新K线数据的API接口"""
     try:
-        data = request.get_json() or {}
-        force_update = data.get('force_update', False)
-        
-        from kline_manager import batch_update_kline_data
-        
-        # 在后台线程中执行更新，避免阻塞API响应
-        def update_in_background():
-            success = batch_update_kline_data(force_update=force_update, max_workers=3)
-            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 手动K线数据更新完成，成功: {success}")
-        
-        update_thread = threading.Thread(target=update_in_background, daemon=True)
-        update_thread.start()
-        
-        update_type = "强制更新" if force_update else "增量更新"
+        from data_fetcher import get_monitor_data
+        from db import get_monitor_stock_by_code
+
+        stocks = get_monitor_data()
+        result = []
+
+        for stock in stocks:
+            conf = get_monitor_stock_by_code(stock["code"])
+            pe_min = conf[4] if conf and conf[4] else 15
+            pe_max = conf[5] if conf and conf[5] else 20
+
+            eps = stock.get("eps_forecast")
+            stock["reasonable_pe_min"] = pe_min
+            stock["reasonable_pe_max"] = pe_max
+            stock["reasonable_price"] = round(eps * pe_min, 2) if eps else None
+
+            result.append(stock)
+
         return jsonify({
-            'status': 'success', 
-            'message': f'已启动{update_type}任务，请在后台查看进度'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error', 
-            'message': f'启动更新失败: {str(e)}'
+            "status": "success",
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "stocks": result
         })
 
-if __name__ == '__main__':
-    # 启动服务，debug=True 模式下修改代码会自动重启，方便开发
-    # host='0.0.0.0' 使局域网内其他设备也能访问
-    print("Flask 服务器正在启动...")
-    print("请在浏览器中访问: http://localhost:5000")
-    
-    # 启动K线数据自动更新线程
-    start_kline_update_thread()
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "stocks": []
+        })
+
+# ---------- 手动K线更新 ----------
+
+@app.route("/api/update-kline", methods=["POST"])
+def api_update_kline():
+    from kline_manager import batch_update_kline_data
+    force = (request.get_json() or {}).get("force_update", False)
+
+    def task():
+        batch_update_kline_data(force_update=force, max_workers=3)
+
+    threading.Thread(target=task, daemon=True).start()
+    return jsonify({"status": "success", "message": "K线更新任务已启动"})
+
+# ================= 启动 =================
+
+if __name__ == "__main__":
+    print("🚀 Flask 启动中：http://localhost:5000")
+
+    # 避免 debug 模式下线程启动两次
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_kline_update_thread()
+
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -311,18 +311,37 @@ def get_cached_monitor_data(code, timeframe, max_age_minutes=5):
     cursor = conn.cursor()
     
     try:
-        # 修复SQL查询，使用参数化查询而不是字符串格式化
+        # 首先获取最新的缓存数据，不使用时间限制
         cursor.execute('''
             SELECT id, code, timeframe, current_price, ema144, ema188, 
                    ema5, ema10, ema20, ema30, ema60, ema7, ema21, ema42, eps_forecast, created_at
             FROM monitor_data_cache
             WHERE code = ? AND timeframe = ?
-            AND datetime(created_at) > datetime('now', '-{} minutes')
             ORDER BY created_at DESC
             LIMIT 1
-        '''.format(max_age_minutes), (code, timeframe))
+        ''', (code, timeframe))
         
         result = cursor.fetchone()
+        
+        # 如果有缓存数据，使用Python检查时间是否在有效期内
+        if result:
+            created_at_str = result[15]  # created_at字段
+            if created_at_str:
+                try:
+                    from datetime import datetime, timedelta
+                    created_at = datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
+                    # 数据库时间是UTC时间，需要转换为北京时间
+                    created_at_beijing = created_at + timedelta(hours=8)
+                    now = datetime.now()
+                    age_minutes = (now - created_at_beijing).total_seconds() / 60
+                    
+                    # 如果缓存时间超过指定时间，返回None
+                    if age_minutes > max_age_minutes:
+                        return None
+                except Exception as e:
+                    print(f"解析缓存时间失败: {e}")
+                    return None
+        
         return result
     except Exception as e:
         print(f"获取缓存监控数据失败: {e}")
