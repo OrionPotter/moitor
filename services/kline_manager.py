@@ -107,6 +107,9 @@ class KlineService:
                 except Exception as e:
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] {code} 异常: {e}")
         
+        status = 'success' if success_count == total else 'partial'
+        KlineRepository.record_update(success_count, total, status)
+        
         print(f"[{datetime.now().strftime('%H:%M:%S')}] K线更新完成:  {success_count}/{total}")
         return success_count == total
     

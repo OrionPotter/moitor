@@ -60,11 +60,6 @@ def start_background_tasks(app):
 
 
 if __name__ == '__main__':
-    # 初始化数据库
-    # from models.db import init_db, populate_initial_data
-    # init_db()
-    # populate_initial_data()
-    
     app = create_app()
     
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':

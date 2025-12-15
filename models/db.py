@@ -387,6 +387,49 @@ class KlineRepository:
                 need_update.append(code)
         
         return need_update
+    
+    @staticmethod
+    def has_updated_today():
+        """检查今天是否已更新"""
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute(
+                'SELECT status FROM kline_update_log WHERE update_date = ? AND status = "success"',
+                (today,)
+            )
+            return cursor.fetchone() is not None
+    
+    @staticmethod
+    def record_update(success_count, total_count, status='success'):
+        """记录更新日志"""
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            today = datetime.now().strftime('%Y-%m-%d')
+            try:
+                cursor.execute(
+                    '''INSERT OR REPLACE INTO kline_update_log 
+                       (update_date, success_count, total_count, status, created_at)
+                       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                    (today, success_count, total_count, status)
+                )
+                conn.commit()
+                return True
+            except Exception as e:
+                logger.error(f"记录更新日志失败: {e}")
+                return False
+    
+    @staticmethod
+    def get_last_update_info():
+        """获取最近一次更新信息"""
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT update_date, success_count, total_count, status, created_at
+                   FROM kline_update_log 
+                   ORDER BY update_date DESC LIMIT 1'''
+            )
+            return cursor.fetchone()
 
 
 def populate_initial_data():
@@ -413,7 +456,7 @@ def populate_initial_data():
         cursor.execute('SELECT COUNT(*) FROM monitor_stocks')
         if cursor.fetchone()[0] == 0:
             try:
-                from config import MONITOR_STOCKS_CONFIG
+                from sql.config import MONITOR_STOCKS_CONFIG
                 for code, name, timeframe, pe_min, pe_max in MONITOR_STOCKS_CONFIG: 
                     cursor.execute(
                         '''INSERT INTO monitor_stocks 
