@@ -21,10 +21,12 @@ def create_app():
     from api.portfolio_routes import portfolio_routes
     from api.monitor_routes import monitor_routes
     from api.admin_routes import admin_routes
+    from api.tools_routes import tools_routes
     
     app.register_blueprint(portfolio_routes, url_prefix='/api/portfolio')
     app.register_blueprint(monitor_routes, url_prefix='/api/monitor')
     app.register_blueprint(admin_routes, url_prefix='/api/admin')
+    app.register_blueprint(tools_routes, url_prefix='/api/tools')
     
     # 页面路由
     @app.route('/')
@@ -38,6 +40,10 @@ def create_app():
     @app.route('/monitor')
     def monitor():
         return render_template('monitor.html')
+    
+    @app.route('/tools')
+    def tools():
+        return render_template('tools.html')
     
     return app
 

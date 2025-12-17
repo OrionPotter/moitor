@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资工具</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 30px; }
+        .main-container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .tool-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .position-row {
+            background-color: #f8f9fa;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .result-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        .text-end { text-align: right !important; }
+    </style>
+</head>
+<body>
+    <div class="container main-container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0">🛠️ 投资工具</h2>
+            <div>
+                <a href="/" class="btn btn-outline-secondary me-2">📈 投资组合</a>
+                <a href="/monitor" class="btn btn-outline-secondary me-2">📊 加仓监控</a>
+                <a href="/admin" class="btn btn-outline-secondary">⚙️ 数据管理</a>
+            </div>
+        </div>
+
+        <div class="tool-card">
+            <h4 class="mb-3">💰 成本计算器</h4>
+            <p class="text-muted">计算多次买入后的平均持仓成本和总持仓数</p>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">选择持仓股票（可选）</label>
+                    <select id="stock-select" class="form-select">
+                        <option value="">-- 自定义输入 --</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">股票名称（自定义）</label>
+                    <input type="text" id="custom-name" class="form-control" placeholder="留空则使用持仓股票名称">
+                </div>
+            </div>
+
+            <div id="positions-container">
+                <div class="position-row" data-index="0">
+                    <div class="row align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">买入价格</label>
+                            <input type="number" class="form-control price-input" step="0.01" placeholder="例: 10.50">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">买入股数</label>
+                            <input type="number" class="form-control shares-input" step="1" placeholder="例: 1000">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-danger btn-sm remove-position" onclick="removePosition(0)">删除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <button class="btn btn-secondary" onclick="addPosition()">➕ 添加买入记录</button>
+                <button class="btn btn-primary ms-2" onclick="calculate()">🧮 计算成本</button>
+            </div>
+
+            <div id="result-container" style="display: none;" class="mt-4">
+                <h5 class="mb-3">📊 计算结果</h5>
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead>
+                            <tr>
+                                <th>股票名称</th>
+                                <th class="text-end">总持仓数</th>
+                                <th class="text-end">平均成本</th>
+                                <th class="text-end">总投入金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong id="result-name">-</strong></td>
+                                <td class="text-end font-monospace" id="result-shares">-</td>
+                                <td class="text-end font-monospace text-success fw-bold" id="result-cost">-</td>
+                                <td class="text-end font-monospace text-primary fw-bold" id="result-total">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let positionIndex = 1;
+        let portfolioStocks = [];
+
+        async function loadPortfolioStocks() {
+            try {
+                const response = await fetch('/api/portfolio');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    portfolioStocks = data.rows;
+                    const select = document.getElementById('stock-select');
+                    
+                    data.rows.forEach(stock => {
+                        const option = document.createElement('option');
+                        option.value = stock.code;
+                        option.textContent = `${stock.name} (${stock.code}) - 持仓: ${stock.shares}股 @ ¥${stock.cost_price.toFixed(2)}`;
+                        option.dataset.shares = stock.shares;
+                        option.dataset.price = stock.cost_price;
+                        option.dataset.name = stock.name;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载持仓数据失败:', error);
+            }
+        }
+
+        document.getElementById('stock-select').addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (this.value) {
+                const shares = selectedOption.dataset.shares;
+                const price = selectedOption.dataset.price;
+                const name = selectedOption.dataset.name;
+                
+                document.getElementById('custom-name').value = name;
+                
+                const container = document.getElementById('positions-container');
+                container.innerHTML = '';
+                positionIndex = 0;
+                
+                const firstPosition = document.createElement('div');
+                firstPosition.className = 'position-row';
+                firstPosition.dataset.index = positionIndex;
+                firstPosition.innerHTML = `
+                    <div class="row align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">买入价格</label>
+                            <input type="number" class="form-control price-input" step="0.01" placeholder="例: 10.50" value="${price}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">买入股数</label>
+                            <input type="number" class="form-control shares-input" step="1" placeholder="例: 1000" value="${shares}">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-danger btn-sm remove-position" onclick="removePosition(${positionIndex})">删除</button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(firstPosition);
+                positionIndex++;
+            } else {
+                document.getElementById('custom-name').value = '';
+                const container = document.getElementById('positions-container');
+                container.innerHTML = '';
+                positionIndex = 0;
+                
+                const firstPosition = document.createElement('div');
+                firstPosition.className = 'position-row';
+                firstPosition.dataset.index = positionIndex;
+                firstPosition.innerHTML = `
+                    <div class="row align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">买入价格</label>
+                            <input type="number" class="form-control price-input" step="0.01" placeholder="例: 10.50">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">买入股数</label>
+                            <input type="number" class="form-control shares-input" step="1" placeholder="例: 1000">
+                        </div>
+                        <div class="col-md-4">
+                            <button class="btn btn-danger btn-sm remove-position" onclick="removePosition(${positionIndex})">删除</button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(firstPosition);
+                positionIndex++;
+            }
+        });
+
+        function addPosition() {
+            const container = document.getElementById('positions-container');
+            const newPosition = document.createElement('div');
+            newPosition.className = 'position-row';
+            newPosition.dataset.index = positionIndex;
+            newPosition.innerHTML = `
+                <div class="row align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">买入价格</label>
+                        <input type="number" class="form-control price-input" step="0.01" placeholder="例: 10.50">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">买入股数</label>
+                        <input type="number" class="form-control shares-input" step="1" placeholder="例: 1000">
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-danger btn-sm remove-position" onclick="removePosition(${positionIndex})">删除</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(newPosition);
+            positionIndex++;
+        }
+
+        function removePosition(index) {
+            const positions = document.querySelectorAll('.position-row');
+            if (positions.length > 1) {
+                const position = document.querySelector(`.position-row[data-index="${index}"]`);
+                position.remove();
+            } else {
+                alert('至少保留一条买入记录');
+            }
+        }
+
+        function calculate() {
+            const positions = document.querySelectorAll('.position-row');
+            let totalShares = 0;
+            let totalCost = 0;
+            let valid = true;
+
+            positions.forEach(position => {
+                const price = parseFloat(position.querySelector('.price-input').value);
+                const shares = parseInt(position.querySelector('.shares-input').value);
+                
+                if (!price || !shares || price <= 0 || shares <= 0) {
+                    valid = false;
+                    return;
+                }
+                
+                totalShares += shares;
+                totalCost += price * shares;
+            });
+
+            if (!valid) {
+                alert('请填写所有买入记录的价格和股数，且必须大于0');
+                return;
+            }
+
+            if (totalShares === 0) {
+                alert('总持仓数不能为0');
+                return;
+            }
+
+            const avgCost = totalCost / totalShares;
+            
+            let stockName = document.getElementById('custom-name').value.trim();
+            if (!stockName) {
+                const select = document.getElementById('stock-select');
+                if (select.value) {
+                    stockName = select.options[select.selectedIndex].dataset.name;
+                } else {
+                    stockName = '未命名股票';
+                }
+            }
+
+            document.getElementById('result-name').textContent = stockName;
+            document.getElementById('result-shares').textContent = totalShares.toLocaleString() + ' 股';
+            document.getElementById('result-cost').textContent = avgCost.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('result-total').textContent = totalCost.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            
+            document.getElementById('result-container').style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', loadPortfolioStocks);
+    </script>
+</body>
+</html>
