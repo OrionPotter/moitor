@@ -1,6 +1,7 @@
 # services/portfolio_service.py
-import time
 import os
+import asyncio
+import aiohttp
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import akshare as ak
@@ -11,7 +12,7 @@ from utils.logger import get_logger
 logger = get_logger('portfolio')
 
 # 清除代理设置
-os.environ. pop('http_proxy', None)
+os.environ.pop('http_proxy', None)
 os.environ.pop('https_proxy', None)
 os.environ.pop('all_proxy', None)
 
@@ -20,60 +21,66 @@ class PortfolioService:
     """投资组合业务逻辑"""
     
     @staticmethod
-    def get_real_time_price(stock_code, max_retries=3):
-        """获取单只股票实时价格
+    def _get_headers() -> dict:
+        """获取请求头，包含cookie"""
+        token = os.getenv('AKSHARE_TOKEN', '')
+        cookie = f"xq_a_token={token};"
+        return {
+            'Cookie': cookie,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://xueqiu.com/'
+        }
+    
+    @staticmethod
+    async def _fetch_stock_price(session: aiohttp.ClientSession, stock_code: str) -> tuple:
+        """异步获取单只股票实时价格
         
         Returns:
             tuple: (stock_code, current_price, dividend_ttm, dividend_yield_ttm)
         """
-        for i in range(max_retries):
-            try:
-                # 转换股票代码格式为雪球格式
-                if stock_code.startswith('sh'):
-                    symbol = 'SH' + stock_code[2:]
-                elif stock_code. startswith('sz'):
-                    symbol = 'SZ' + stock_code[2:]
-                else:
-                    symbol = 'SH' + stock_code if stock_code.startswith('6') else 'SZ' + stock_code
-                
-                token = os.getenv('AKSHARE_TOKEN')
-                spot_data = ak.stock_individual_spot_xq(symbol=symbol, token=token, timeout=10)
-                
-                if spot_data is not None and not spot_data.empty:
-                    current_price = None
-                    dividend_ttm = None
-                    dividend_yield_ttm = None
-                    
-                    # 提取现价
-                    for col in ['现价', '最新价']: 
-                        price_row = spot_data[spot_data['item'] == col]
-                        if not price_row.empty:
-                            val = float(price_row['value'].iloc[0])
-                            if val > 0:
-                                current_price = val
-                                break
-                    
-                    # 提取股息(TTM)
-                    div_row = spot_data[spot_data['item'] == '股息(TTM)']
-                    if not div_row.empty:
-                        dividend_ttm = float(div_row['value'].iloc[0])
-                    
-                    # 提取股息率(TTM)
-                    yield_row = spot_data[spot_data['item'] == '股息率(TTM)']
-                    if not yield_row. empty:
-                        dividend_yield_ttm = float(yield_row['value'].iloc[0])
-                    
-                    if current_price: 
-                        logger.info(f"成功获取 {stock_code} 的价格: {current_price}")
-                        return stock_code, current_price, dividend_ttm, dividend_yield_ttm
+        try:
+            # 转换股票代码格式为雪球格式
+            if stock_code.startswith('sh'):
+                symbol = 'SH' + stock_code[2:]
+            elif stock_code.startswith('sz'):
+                symbol = 'SZ' + stock_code[2:]
+            else:
+                symbol = 'SH' + stock_code if stock_code.startswith('6') else 'SZ' + stock_code
             
-            except Exception as e: 
-                if i < max_retries - 1:
-                    time.sleep(2)
-                else:
-                    logger.error(f"获取 {stock_code} 实时价格失败: {str(e)[:100]}")
+            # 使用雪球API获取股票数据
+            url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol={symbol}&extend=detail"
+            
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                response.raise_for_status()
+                data = await response.json()
+                
+                if data and 'data' in data and 'quote' in data['data']:
+                    quote = data['data']['quote']
+                    current_price = quote.get('current')
+                    dividend_ttm = quote.get('dividend')
+                    dividend_yield_ttm = quote.get('dividend_yield')
+                    
+                    if current_price and current_price > 0:
+                        return stock_code, current_price, dividend_ttm or 0, dividend_yield_ttm or 0
+        
+        except Exception as e:
+            logger.error(f"获取 {stock_code} 实时价格失败: {str(e)[:100]}")
         
         return stock_code, None, None, None
+    
+    @staticmethod
+    def get_real_time_price(stock_code, max_retries=3):
+        """获取单只股票实时价格（同步方法，用于向后兼容）
+        
+        Returns:
+            tuple: (stock_code, current_price, dividend_ttm, dividend_yield_ttm)
+        """
+        async def fetch():
+            headers = PortfolioService._get_headers()
+            async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
+                return await PortfolioService._fetch_stock_price(session, stock_code)
+        
+        return asyncio.run(fetch())
     
     @staticmethod
     def get_portfolio_data():
@@ -82,8 +89,6 @@ class PortfolioService:
         Returns:
             tuple: (rows_list, summary_dict)
         """
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 开始获取投资组合数据...")
-        
         # 获取所有股票
         stocks = StockRepository.get_all()
         if not stocks:
@@ -91,20 +96,35 @@ class PortfolioService:
         
         stock_codes = [stock[1] for stock in stocks]
         
-        # 并发获取实时价格
-        print(f"并发获取 {len(stock_codes)} 只股票的数据...")
-        start = time.time()
+        # 使用asyncio运行异步函数
+        async def fetch_all():
+            headers = PortfolioService._get_headers()
+            connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
+            
+            async with aiohttp.ClientSession(headers=headers, connector=connector, trust_env=False) as session:
+                # 创建所有异步任务
+                tasks = [PortfolioService._fetch_stock_price(session, code) for code in stock_codes]
+                
+                # 并发执行所有任务
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 处理结果
+                processed_results = []
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error(f"获取股票数据时发生异常: {result}")
+                        processed_results.append((None, None, None, None))
+                    else:
+                        processed_results.append(result)
+                
+                return processed_results
         
-        with ThreadPoolExecutor(max_workers=7) as executor:
-            results = list(executor.map(PortfolioService.get_real_time_price, stock_codes))
-        
-        elapsed = time.time() - start
-        print(f"并发完成，耗时 {elapsed:.2f} 秒")
+        results = asyncio.run(fetch_all())
         
         # 构建股票数据映射
         stock_data_map = {
             r[0]: {'price': r[1], 'div':  r[2], 'div_yield': r[3]}
-            for r in results
+            for r in results if r[0]
         }
         
         # 计算投资组合数据
@@ -133,5 +153,4 @@ class PortfolioService:
             total['profit'] += row['profit']
             total['annual_dividend'] += row['annual_dividend_income']
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] 计算完成")
         return rows, total

@@ -84,6 +84,16 @@ CREATE TABLE IF NOT EXISTS kline_update_log (
     CONSTRAINT chk_count_valid CHECK (success_count <= total_count)
 );
 
+-- 创建雪球组合表
+CREATE TABLE IF NOT EXISTS xueqiu_cubes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cube_symbol TEXT UNIQUE NOT NULL,
+    cube_name TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 创建索引以提高查询性能
 -- portfolio表索引
 CREATE INDEX IF NOT EXISTS idx_portfolio_code ON portfolio(code);
@@ -110,6 +120,10 @@ CREATE INDEX IF NOT EXISTS idx_kline_created ON stock_kline_data(created_at);
 CREATE INDEX IF NOT EXISTS idx_update_log_date ON kline_update_log(update_date);
 CREATE INDEX IF NOT EXISTS idx_update_log_status ON kline_update_log(status);
 
+-- xueqiu_cubes表索引
+CREATE INDEX IF NOT EXISTS idx_xueqiu_cube_symbol ON xueqiu_cubes(cube_symbol);
+CREATE INDEX IF NOT EXISTS idx_xueqiu_enabled ON xueqiu_cubes(enabled);
+
 -- 创建触发器以自动更新 updated_at 字段
 -- portfolio表触发器
 CREATE TRIGGER IF NOT EXISTS update_portfolio_updated_at
@@ -133,6 +147,14 @@ CREATE TRIGGER IF NOT EXISTS update_stock_kline_data_updated_at
     FOR EACH ROW
 BEGIN
     UPDATE stock_kline_data SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- xueqiu_cubes表触发器
+CREATE TRIGGER IF NOT EXISTS update_xueqiu_cubes_updated_at
+    AFTER UPDATE ON xueqiu_cubes
+    FOR EACH ROW
+BEGIN
+    UPDATE xueqiu_cubes SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 -- 插入初始化数据
@@ -165,6 +187,14 @@ INSERT OR IGNORE INTO monitor_stocks (code, name, timeframe, reasonable_pe_min, 
 ('sz000895', '双汇发展', '1d', 16.5, 22.0),
 ('sz000915', '华特达因', '2d', 15.0, 20.0),
 ('sz002142', '宁波银行', '2d', 6.0, 9.0);
+
+-- 雪球组合初始数据
+INSERT OR IGNORE INTO xueqiu_cubes (cube_symbol, cube_name, enabled) VALUES
+('ZH2363479', '万万没想到', 1),
+('ZH3154960', '知行合一', 1),
+('ZH1759090', '控鹤', 1),
+('ZH2043700', '打野题材', 1),
+('ZH1350829', '大匡哥', 1);
 
 -- 创建视图以便查询
 -- 投资组合汇总视图

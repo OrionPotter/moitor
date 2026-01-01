@@ -22,11 +22,13 @@ def create_app():
     from api.monitor_routes import monitor_routes
     from api.admin_routes import admin_routes
     from api.tools_routes import tools_routes
+    from api.xueqiu_routes import xueqiu_routes
     
     app.register_blueprint(portfolio_routes, url_prefix='/api/portfolio')
     app.register_blueprint(monitor_routes, url_prefix='/api/monitor')
     app.register_blueprint(admin_routes, url_prefix='/api/admin')
     app.register_blueprint(tools_routes, url_prefix='/api/tools')
+    app.register_blueprint(xueqiu_routes, url_prefix='/api/xueqiu')
     
     # 页面路由
     @app.route('/')
@@ -44,6 +46,10 @@ def create_app():
     @app.route('/tools')
     def tools():
         return render_template('tools.html')
+    
+    @app.route('/xueqiu')
+    def xueqiu():
+        return render_template('xueqiu.html')
     
     return app
 
@@ -72,4 +78,4 @@ if __name__ == '__main__':
         start_background_tasks(app)
     
     logger.info("Flask 启动中：http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

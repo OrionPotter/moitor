@@ -101,3 +101,59 @@ def toggle_monitor_stock(code):
         'status': 'success' if success else 'error',
         'message': '操作成功' if success else '操作失败'
     })
+
+# ========== 雪球组合管理 ==========
+
+@admin_routes.route('/xueqiu-cubes', methods=['GET'])
+def list_xueqiu_cubes():
+    """列出所有雪球组合"""
+    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    cubes = XueqiuCubeRepository.get_all()
+    return jsonify({
+        'status': 'success',
+        'data': [cube.to_dict() for cube in cubes]
+    })
+
+@admin_routes.route('/xueqiu-cubes', methods=['POST'])
+def create_xueqiu_cube():
+    """创建雪球组合"""
+    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    data = request.get_json()
+    success, msg = XueqiuCubeRepository.add(
+        data['cube_symbol'], data['cube_name'], data.get('enabled', True)
+    )
+    return jsonify({'status': 'success' if success else 'error', 'message': msg})
+
+@admin_routes.route('/xueqiu-cubes/<cube_symbol>', methods=['PUT'])
+def update_xueqiu_cube(cube_symbol):
+    """更新雪球组合"""
+    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    data = request.get_json()
+    success = XueqiuCubeRepository.update(
+        cube_symbol, data['cube_name'], data.get('enabled', True)
+    )
+    return jsonify({
+        'status': 'success' if success else 'error',
+        'message': '更新成功' if success else '更新失败'
+    })
+
+@admin_routes.route('/xueqiu-cubes/<cube_symbol>', methods=['DELETE'])
+def delete_xueqiu_cube(cube_symbol):
+    """删除雪球组合"""
+    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    success = XueqiuCubeRepository.delete(cube_symbol)
+    return jsonify({
+        'status': 'success' if success else 'error',
+        'message': '删除成功' if success else '删除失败'
+    })
+
+@admin_routes.route('/xueqiu-cubes/<cube_symbol>/toggle', methods=['POST'])
+def toggle_xueqiu_cube(cube_symbol):
+    """启用/禁用雪球组合"""
+    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    data = request.get_json()
+    success = XueqiuCubeRepository.toggle_enabled(cube_symbol, data.get('enabled', True))
+    return jsonify({
+        'status': 'success' if success else 'error',
+        'message': '操作成功' if success else '操作失败'
+    })

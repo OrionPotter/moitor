@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雪球组合监控</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 30px; }
+        .main-container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .text-end { text-align: right !important; }
+        .cube-header {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 5px solid #0d6efd;
+        }
+        .change-buy { color: #198754; }
+        .change-sell { color: #dc3545; }
+        .badge-buy { background-color: #198754; }
+        .badge-sell { background-color: #dc3545; }
+        .comment-box {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #6c757d;
+            font-size: 0.9em;
+            color: #495057;
+        }
+        .stock-change {
+            padding: 8px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            margin-bottom: 5px;
+        }
+        .accordion-button:not(.collapsed) {
+            background-color: #e7f1ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container main-container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0">🏔️ 雪球组合监控</h2>
+            <div class="d-flex align-items-center">
+                <a href="/" class="btn btn-outline-secondary me-2">📈 投资组合</a>
+                <a href="/monitor" class="btn btn-outline-secondary me-2">📊 加仓监控</a>
+                <a href="/tools" class="btn btn-outline-secondary me-2">🛠️ 投资工具</a>
+                <a href="/admin" class="btn btn-outline-secondary me-2">⚙️ 数据管理</a>
+                <small class="text-muted me-3" id="update-time"></small>
+                <button id="refresh-btn" class="btn btn-primary">
+                    🔄 刷新数据
+                </button>
+            </div>
+        </div>
+        
+        <div class="alert alert-info">
+            <strong>监控说明：</strong>实时监控雪球组合的调仓历史和仓位变动信息，帮助跟踪投资策略的调整。
+        </div>
+        
+        <div id="cubes-container">
+            <div class="text-center p-4 text-muted">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-2">正在加载数据，请稍候...</p>
+            </div>
+        </div>
+        
+        <div id="all-records-container" class="mt-4" style="display: none;">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>组合</th>
+                            <th>调仓时间</th>
+                            <th>股票名称</th>
+                            <th>股票代码</th>
+                            <th class="text-center">操作</th>
+                            <th class="text-end">仓位变化</th>
+                            <th class="text-end">仓位</th>
+                            <th class="text-end">价格</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-records-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 工具函数：格式化百分比
+        function formatPercent(num) {
+            if (num === undefined || num === null) return '-';
+            return num.toFixed(2) + '%';
+        }
+        
+        // 核心函数：从 API 获取数据并更新页面
+        async function loadData() {
+            const btn = document.getElementById('refresh-btn');
+            const container = document.getElementById('cubes-container');
+            const allRecordsContainer = document.getElementById('all-records-container');
+            const tbody = document.getElementById('all-records-body');
+            const timeLabel = document.getElementById('update-time');
+            
+            // 设置按钮加载状态
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 加载中...';
+
+            try {
+                // 发起 API 请求
+                const response = await fetch('/api/xueqiu');
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // 隐藏加载提示，显示表格
+                    container.style.display = 'none';
+                    allRecordsContainer.style.display = 'block';
+                    
+                    const cubesData = result.data;
+                    const cubeSymbols = Object.keys(cubesData);
+                    
+                    if (cubeSymbols.length === 0) {
+                        allRecordsContainer.innerHTML = `
+                            <div class="alert alert-warning">
+                                <strong>暂无数据：</strong>请在.env文件中配置雪球组合ID（XQ_CUBES）
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // 收集所有调仓记录
+                    let allRecords = [];
+                    cubeSymbols.forEach(cubeSymbol => {
+                        const history = cubesData[cubeSymbol];
+                        const cubeName = history.length > 0 ? history[0].cube_name : cubeSymbol;
+                        
+                        history.forEach(item => {
+                            if (item.changes && item.changes.length > 0) {
+                                item.changes.forEach(change => {
+                                    allRecords.push({
+                                        cubeName: cubeName,
+                                        cubeSymbol: cubeSymbol,
+                                        rebalancingTime: item.rebalancing_time,
+                                        stockName: change.stock_name,
+                                        stockSymbol: change.stock_symbol,
+                                        action: change.action,
+                                        change: change.change,
+                                        prevWeight: change.prev_weight,
+                                        targetWeight: change.target_weight,
+                                        price: change.price,
+                                        comment: item.comment
+                                    });
+                                });
+                            }
+                        });
+                    });
+                    
+                    // 按时间排序（最新的在前）
+                    allRecords.sort((a, b) => new Date(b.rebalancingTime) - new Date(a.rebalancingTime));
+                    
+                    // 清空表格
+                    tbody.innerHTML = '';
+                    
+                    if (allRecords.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">暂无调仓记录</td></tr>';
+                        return;
+                    }
+                    
+                    // 填充表格
+                    allRecords.forEach(record => {
+                        const actionClass = record.action === '买入' ? 'badge-buy' : 'badge-sell';
+                        const changeClass = record.action === '买入' ? 'change-buy' : 'change-sell';
+                        const changeSign = record.change > 0 ? '+' : '';
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><strong>${record.cubeName}</strong></td>
+                            <td>${record.rebalancingTime}</td>
+                            <td><strong>${record.stockName}</strong></td>
+                            <td><small class="text-muted">${record.stockSymbol}</small></td>
+                            <td class="text-center"><span class="badge ${actionClass}">${record.action}</span></td>
+                            <td class="text-end ${changeClass}">${changeSign}${formatPercent(record.change)}</td>
+                            <td class="text-end text-muted">${formatPercent(record.targetWeight)}</td>
+                            <td class="text-end">${record.price ? record.price.toFixed(2) : '-'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                    
+                    // 更新时间标签
+                    timeLabel.textContent = '最后更新: ' + result.timestamp + ' | 共 ' + allRecords.length + ' 条记录';
+
+                } else {
+                    allRecordsContainer.innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>数据加载失败：</strong>${result.message || '未知错误'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                allRecordsContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>网络请求错误：</strong>请检查连接或雪球配置是否正确。
+                    </div>
+                `;
+            } finally {
+                // 恢复按钮状态
+                btn.disabled = false;
+                btn.innerHTML = '🔄 刷新数据';
+            }
+        }
+
+        // 页面加载完成后自动执行一次数据加载
+        document.addEventListener('DOMContentLoaded', loadData);
+        
+        // 绑定刷新按钮的点击事件
+        document.getElementById('refresh-btn').addEventListener('click', loadData);
+    </script>
+    
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.1/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
