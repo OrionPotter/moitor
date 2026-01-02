@@ -60,7 +60,7 @@ def start_background_tasks(app):
         logger.warning("已禁用自动K线更新")
         return
     
-    from services.kline_manager import KlineService
+    from services.kline_service import KlineService
     
     def auto_update():
         with app.app_context():

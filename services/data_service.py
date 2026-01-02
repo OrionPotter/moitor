@@ -1,4 +1,4 @@
-# services/data_fetcher.py
+# services/data_service.py
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
@@ -18,10 +18,10 @@ os.environ.pop('https_proxy', None)
 os.environ.pop('all_proxy', None)
 
 # 获取日志实例
-logger = get_logger('data_fetcher')
+logger = get_logger('data_service')
 
 
-class DataFetcher:
+class DataService:
     """数据获取服务"""
     
     @staticmethod
@@ -39,7 +39,7 @@ class DataFetcher:
     @staticmethod
     def get_stock_kline_data(stock_code, period='daily', count=250):
         """获取股票K线数据（优先从本地数据库读取）"""
-        from services.kline_manager import KlineService
+        from services.kline_service import KlineService
         
         # 优先从本地数据库读取
         df = KlineService.get_kline_with_cache(stock_code, period, count)
@@ -106,7 +106,7 @@ class DataFetcher:
             elif code.startswith('sz'):
                 code = code[2:]
             
-            from services.fetch_eps_forecast_akshare import get_current_year_eps_forecast
+            from services.eps_service import get_current_year_eps_forecast
             eps = get_current_year_eps_forecast(code)
             return eps
         except Exception as e: 
@@ -154,7 +154,7 @@ class DataFetcher:
                 return None
             
             # 获取K线数据
-            kline_data = DataFetcher.get_stock_kline_data(stock_code, timeframe)
+            kline_data = DataService.get_stock_kline_data(stock_code, timeframe)
             
             if kline_data is None or len(kline_data) < 188:
                 logger.warning(f"无法获取 {stock_code} 的足够K线数据")
@@ -162,8 +162,8 @@ class DataFetcher:
             
             # 计算EMA
             closing_prices = kline_data['收盘']
-            ema144 = DataFetcher.calculate_ema(closing_prices, 144)
-            ema188 = DataFetcher.calculate_ema(closing_prices, 188)
+            ema144 = DataService.calculate_ema(closing_prices, 144)
+            ema188 = DataService.calculate_ema(closing_prices, 188)
             
             if ema144 is None or ema188 is None:
                 logger.warning(f"无法计算 {stock_code} 的EMA值")
@@ -175,23 +175,22 @@ class DataFetcher:
             ema7 = ema21 = ema42 = None
             
             if timeframe == '1d' and len(closing_prices) >= 20:
-                ema5 = DataFetcher.calculate_ema(closing_prices, 5)
-                ema10 = DataFetcher.calculate_ema(closing_prices, 10)
-                ema20 = DataFetcher.calculate_ema(closing_prices, 20)
+                ema5 = DataService.calculate_ema(closing_prices, 5)
+                ema10 = DataService.calculate_ema(closing_prices, 10)
+                ema20 = DataService.calculate_ema(closing_prices, 20)
             elif timeframe == '2d' and len(closing_prices) >= 60:
-                ema10_2d = DataFetcher.calculate_ema(closing_prices, 10)
-                ema30 = DataFetcher.calculate_ema(closing_prices, 30)
-                ema60 = DataFetcher.calculate_ema(closing_prices, 60)
+                ema10_2d = DataService.calculate_ema(closing_prices, 10)
+                ema30 = DataService.calculate_ema(closing_prices, 30)
+                ema60 = DataService.calculate_ema(closing_prices, 60)
             elif timeframe == '3d' and len(closing_prices) >= 42:
-                ema7 = DataFetcher.calculate_ema(closing_prices, 7)
-                ema21 = DataFetcher.calculate_ema(closing_prices, 21)
-                ema42 = DataFetcher.calculate_ema(closing_prices, 42)
-            
+                ema7 = DataService.calculate_ema(closing_prices, 7)
+                ema21 = DataService.calculate_ema(closing_prices, 21)
+                ema42 = DataService.calculate_ema(closing_prices, 42)         
             pe_min = monitor_config[4] if monitor_config else 15
             pe_max = monitor_config[5] if monitor_config else 20
             
             # 获取EPS预测
-            eps_forecast = DataFetcher.get_eps_forecast(stock_code)
+            eps_forecast = DataService.get_eps_forecast(stock_code)
             
             result = {
                 'code': stock_code,
@@ -257,7 +256,7 @@ class DataFetcher:
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
-                    DataFetcher.process_monitor_stock,
+                    DataService.process_monitor_stock,
                     stock,
                     MonitorStockRepository.get_by_code(stock['code'])
                 ) for stock in monitor_stocks
@@ -279,7 +278,7 @@ class DataFetcher:
             
             with ThreadPoolExecutor(max_workers=5) as executor:
                 eps_futures = {
-                    executor.submit(DataFetcher.get_eps_forecast, r['code']): r
+                    executor.submit(DataService.get_eps_forecast, r['code']): r
                     for r in stocks_need_eps
                 }
                 

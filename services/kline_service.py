@@ -1,4 +1,4 @@
-# services/kline_manager.py
+# services/kline_service.py
 import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
@@ -13,7 +13,7 @@ os.environ.pop('https_proxy', None)
 os.environ.pop('all_proxy', None)
 
 # 获取日志实例
-logger = get_logger('kline_manager')
+logger = get_logger('kline_service')
 
 
 class KlineService:

@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class XueqiuMonitorService:
+class XueqiuService:
     """雪球组合监控服务"""
     
     @staticmethod
@@ -84,7 +84,7 @@ class XueqiuMonitorService:
             return {}
         
         # 使用asyncio运行异步函数
-        return asyncio.run(XueqiuMonitorService._fetch_all_cubes_async(cube_symbols))
+        return asyncio.run(XueqiuService._fetch_all_cubes_async(cube_symbols))
     
     @staticmethod
     async def _fetch_all_cubes_async(cube_symbols: List[str]) -> Dict[str, List[Dict]]:
@@ -97,14 +97,14 @@ class XueqiuMonitorService:
             字典，key为组合ID，value为调仓历史列表
         """
         result = {}
-        headers = XueqiuMonitorService._get_headers()
+        headers = XueqiuService._get_headers()
         
         # 使用aiohttp的连接器，限制并发连接数
         connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
         
         async with aiohttp.ClientSession(headers=headers, connector=connector, trust_env=False) as session:
             # 创建所有异步任务
-            tasks = [XueqiuMonitorService._fetch_cube_data(session, symbol) for symbol in cube_symbols]
+            tasks = [XueqiuService._fetch_cube_data(session, symbol) for symbol in cube_symbols]
             
             # 并发执行所有任务
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -182,7 +182,7 @@ class XueqiuMonitorService:
                 
                 formatted.append({
                     'cube_symbol': cube_symbol,
-                    'cube_name': XueqiuMonitorService._get_cube_name(cube_symbol),
+                    'cube_name': XueqiuService._get_cube_name(cube_symbol),
                     'rebalancing_time': rebalancing_time,
                     'comment': item.get('comment', ''),
                     'changes': changes,
@@ -202,10 +202,10 @@ class XueqiuMonitorService:
         Returns:
             字典，key为组合ID，value为格式化后的调仓数据列表
         """
-        all_data = XueqiuMonitorService.get_all_cubes_data()
+        all_data = XueqiuService.get_all_cubes_data()
         result = {}
         
         for cube_symbol, history in all_data.items():
-            result[cube_symbol] = XueqiuMonitorService.format_rebalancing_data(cube_symbol, history)
+            result[cube_symbol] = XueqiuService.format_rebalancing_data(cube_symbol, history)
         
         return result

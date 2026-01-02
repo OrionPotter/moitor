@@ -1,6 +1,6 @@
 # services/monitor_service.py
 from models.db import MonitorStockRepository
-from services.data_fetcher import DataFetcher
+from services.data_service import DataService
 from datetime import datetime
 import os
 
@@ -15,7 +15,7 @@ class MonitorService:
     @staticmethod
     def get_monitor_data():
         """获取监控数据"""
-        return DataFetcher.get_monitor_data()
+        return DataService.get_monitor_data()
     
     @staticmethod
     def get_all_monitor_stocks():

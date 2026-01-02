@@ -104,7 +104,7 @@ def toggle_monitor_stock(code):
 def update_kline():
     """手动更新K线数据"""
     try:
-        from services.kline_manager import KlineService
+        from services.kline_service import KlineService
         force = request.get_json().get('force_update', False)
         
         def task():

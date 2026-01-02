@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from services.xueqiu_monitor_service import XueqiuMonitorService
+from services.xueqiu_service import XueqiuService
 from datetime import datetime
 
 xueqiu_routes = Blueprint('xueqiu', __name__)
@@ -10,7 +10,7 @@ def get_xueqiu_data():
     """获取所有雪球组合的调仓数据"""
     try:
         # 调用同步方法，内部已经使用asyncio.run()运行异步代码
-        all_data = XueqiuMonitorService.get_all_formatted_data()
+        all_data = XueqiuService.get_all_formatted_data()
         
         return jsonify({
             'status': 'success',
@@ -27,10 +27,10 @@ def get_cube_data(cube_symbol):
     try:
         # 在同步函数中运行异步代码
         async def fetch_single():
-            headers = XueqiuMonitorService._get_headers()
+            headers = XueqiuService._get_headers()
             import aiohttp
             async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
-                history = await XueqiuMonitorService._fetch_cube_data(session, cube_symbol)
+                history = await XueqiuService._fetch_cube_data(session, cube_symbol)
             return history
         
         history = asyncio.run(fetch_single())
@@ -38,7 +38,7 @@ def get_cube_data(cube_symbol):
         if history is None:
             return jsonify({'status': 'error', 'message': '获取数据失败'}), 500
         
-        formatted = XueqiuMonitorService.format_rebalancing_data(cube_symbol, history)
+        formatted = XueqiuService.format_rebalancing_data(cube_symbol, history)
         
         return jsonify({
             'status': 'success',
