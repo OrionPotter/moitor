@@ -59,32 +59,51 @@ class XueqiuService:
         
         Args:
             cube_symbol: 组合ID
-        
+
         Returns:
             组合名称
         """
-        from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+        from repositories.xueqiu_repository import XueqiuCubeRepository
         cube = XueqiuCubeRepository.get_by_symbol(cube_symbol)
         return cube.cube_name if cube else cube_symbol
     
     @staticmethod
     def get_all_cubes_data() -> Dict[str, List[Dict]]:
         """获取所有配置的雪球组合数据（异步并发请求）
-        
+
         Returns:
             字典，key为组合ID，value为调仓历史列表
         """
-        from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
-        
+        from repositories.xueqiu_repository import XueqiuCubeRepository
+
         # 从数据库获取启用的组合列表
         cube_symbols = XueqiuCubeRepository.get_enabled_symbols()
-        
+
         if not cube_symbols:
             logger.warning("未配置启用的雪球组合")
             return {}
-        
+
         # 使用asyncio运行异步函数
         return asyncio.run(XueqiuService._fetch_all_cubes_async(cube_symbols))
+
+    @staticmethod
+    async def get_all_cubes_data_async() -> Dict[str, List[Dict]]:
+        """获取所有配置的雪球组合数据（异步并发请求）
+
+        Returns:
+            字典，key为组合ID，value为调仓历史列表
+        """
+        from repositories.xueqiu_repository import XueqiuCubeRepository
+
+        # 从数据库获取启用的组合列表
+        cube_symbols = XueqiuCubeRepository.get_enabled_symbols()
+
+        if not cube_symbols:
+            logger.warning("未配置启用的雪球组合")
+            return {}
+
+        # 直接调用异步函数
+        return await XueqiuService._fetch_all_cubes_async(cube_symbols)
     
     @staticmethod
     async def _fetch_all_cubes_async(cube_symbols: List[str]) -> Dict[str, List[Dict]]:
@@ -194,17 +213,32 @@ class XueqiuService:
                 continue
         
         return formatted
-    
+
+    @staticmethod
+    async def get_all_formatted_data_async() -> Dict[str, List[Dict]]:
+        """获取所有雪球组合的格式化数据（异步版本）
+
+        Returns:
+            字典，key为组合ID，value为格式化后的调仓数据列表
+        """
+        all_data = await XueqiuService.get_all_cubes_data_async()
+        result = {}
+
+        for cube_symbol, history in all_data.items():
+            result[cube_symbol] = XueqiuService.format_rebalancing_data(cube_symbol, history)
+
+        return result
+
     @staticmethod
     def get_all_formatted_data() -> Dict[str, List[Dict]]:
         """获取所有雪球组合的格式化数据
-        
+
         Returns:
             字典，key为组合ID，value为格式化后的调仓数据列表
         """
         all_data = XueqiuService.get_all_cubes_data()
         result = {}
-        
+
         for cube_symbol, history in all_data.items():
             result[cube_symbol] = XueqiuService.format_rebalancing_data(cube_symbol, history)
         

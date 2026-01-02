@@ -218,9 +218,12 @@
             }
         }
 
-        // 页面加载完成后自动执行一次数据加载
+        // 在页面加载时就预加载数据（不等待DOMContentLoaded）
+        loadData();
+
+        // 页面加载完成后也执行一次（确保DOM已准备好）
         document.addEventListener('DOMContentLoaded', loadData);
-        
+
         // 绑定刷新按钮的点击事件
         document.getElementById('refresh-btn').addEventListener('click', loadData);
     </script>

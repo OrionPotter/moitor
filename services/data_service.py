@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 import time
 from dotenv import load_dotenv
-from models.db import MonitorDataCacheRepository
+from repositories.cache_repository import MonitorDataCacheRepository
 from utils.logger import get_logger
 
 load_dotenv()
@@ -117,33 +117,33 @@ class DataService:
     def process_monitor_stock(stock, monitor_config):
         """处理单只监控股票"""
         from services.portfolio_service import PortfolioService
-        
-        stock_code = stock['code']
-        stock_name = stock['name']
-        timeframe = stock['timeframe']
-        
+
+        stock_code = stock.code
+        stock_name = stock.name
+        timeframe = stock.timeframe
+
         try:
             # 尝试从缓存获取
             cached = MonitorDataCacheRepository.get_by_code_and_timeframe(stock_code, timeframe, 30)
-            if cached and len(cached) >= 16: 
+            if cached:
                 return {
                     'code': stock_code,
                     'name': stock_name,
-                    'current_price': cached[3],
-                    'ema144': cached[4],
-                    'ema188': cached[5],
-                    'ema5': cached[6],
-                    'ema10': cached[7],
-                    'ema20': cached[8],
-                    'ema30': cached[9],
-                    'ema60': cached[10],
-                    'ema7': cached[11],
-                    'ema21': cached[12],
-                    'ema42': cached[13],
-                    'eps_forecast': cached[14],
+                    'current_price': cached.current_price,
+                    'ema144': cached.ema144,
+                    'ema188': cached.ema188,
+                    'ema5': cached.ema5,
+                    'ema10': cached.ema10,
+                    'ema20': cached.ema20,
+                    'ema30': cached.ema30,
+                    'ema60': cached.ema60,
+                    'ema7': cached.ema7,
+                    'ema21': cached.ema21,
+                    'ema42': cached.ema42,
+                    'eps_forecast': cached.eps_forecast,
                     'timeframe': timeframe,
-                    'reasonable_pe_min': monitor_config[4] if monitor_config else 15,
-                    'reasonable_pe_max': monitor_config[5] if monitor_config else 20,
+                    'reasonable_pe_min': monitor_config.reasonable_pe_min if monitor_config else 15,
+                    'reasonable_pe_max': monitor_config.reasonable_pe_max if monitor_config else 20,
                 }
             
             # 获取实时价格
@@ -185,10 +185,10 @@ class DataService:
             elif timeframe == '3d' and len(closing_prices) >= 42:
                 ema7 = DataService.calculate_ema(closing_prices, 7)
                 ema21 = DataService.calculate_ema(closing_prices, 21)
-                ema42 = DataService.calculate_ema(closing_prices, 42)         
-            pe_min = monitor_config[4] if monitor_config else 15
-            pe_max = monitor_config[5] if monitor_config else 20
-            
+                ema42 = DataService.calculate_ema(closing_prices, 42)
+            pe_min = monitor_config.reasonable_pe_min if monitor_config else 15
+            pe_max = monitor_config.reasonable_pe_max if monitor_config else 20
+
             # 获取EPS预测
             eps_forecast = DataService.get_eps_forecast(stock_code)
             
@@ -231,39 +231,35 @@ class DataService:
     @staticmethod
     def get_monitor_data():
         """获取监控数据"""
-        from models.db import MonitorStockRepository, KlineRepository
-        
+        from repositories.monitor_repository import MonitorStockRepository
+        from repositories.kline_repository import KlineRepository
+
         logger.info("开始获取监控数据...")
         
         # 清理过期缓存
         deleted = MonitorDataCacheRepository.clean_old_data(1)
         if deleted > 0:
             logger.info(f"清理了 {deleted} 条过期缓存")
-        
+
         # 获取启用的监控股票
-        monitor_stocks_db = MonitorStockRepository.get_enabled()
-        
-        monitor_stocks = [
-            {'code': s[1], 'name': s[2], 'timeframe': s[3]}
-            for s in monitor_stocks_db
-        ]
-        
+        monitor_stocks = MonitorStockRepository.get_enabled()
+
         logger.info(f"从数据库加载了 {len(monitor_stocks)} 只监控股票")
         
         results = []
-        
+
         # 并发处理，保持原始顺序
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
                     DataService.process_monitor_stock,
                     stock,
-                    MonitorStockRepository.get_by_code(stock['code'])
+                    stock
                 ) for stock in monitor_stocks
             ]
-            
+
             for future in futures:
-                try: 
+                try:
                     result = future.result()
                     if result:
                         results.append(result)

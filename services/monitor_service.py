@@ -1,5 +1,5 @@
 # services/monitor_service.py
-from models.db import MonitorStockRepository
+from repositories.monitor_repository import MonitorStockRepository
 from services.data_service import DataService
 from datetime import datetime
 import os
@@ -21,35 +21,16 @@ class MonitorService:
     def get_all_monitor_stocks():
         """获取所有监控股票"""
         stocks = MonitorStockRepository.get_all()
-        return [
-            {
-                'id': s[0],
-                'code': s[1],
-                'name': s[2],
-                'timeframe': s[3],
-                'reasonable_pe_min': s[4],
-                'reasonable_pe_max': s[5],
-                'enabled': bool(s[6])
-            }
-            for s in stocks
-        ]
-    
+        return [s.to_dict() for s in stocks]
+
     @staticmethod
     def get_monitor_stock(code):
         """获取单个监控股票"""
         stock = MonitorStockRepository.get_by_code(code)
         if not stock:
             return None
-        
-        return {
-            'id': stock[0],
-            'code': stock[1],
-            'name':  stock[2],
-            'timeframe': stock[3],
-            'reasonable_pe_min': stock[4],
-            'reasonable_pe_max': stock[5],
-            'enabled': bool(stock[6])
-        }
+
+        return stock.to_dict()
     
     @staticmethod
     def create_monitor_stock(code, name, timeframe, pe_min=15, pe_max=20):

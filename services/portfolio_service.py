@@ -5,7 +5,7 @@ import aiohttp
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import akshare as ak
-from models.db import StockRepository
+from repositories.portfolio_repository import StockRepository
 from utils.logger import get_logger
 
 # 获取日志实例
@@ -93,8 +93,8 @@ class PortfolioService:
         stocks = StockRepository.get_all()
         if not stocks:
             return [], {'market_value': 0, 'profit':  0, 'annual_dividend': 0}
-        
-        stock_codes = [stock[1] for stock in stocks]
+
+        stock_codes = [stock.code for stock in stocks]
         
         # 使用asyncio运行异步函数
         async def fetch_all():
@@ -120,21 +120,26 @@ class PortfolioService:
                 return processed_results
         
         results = asyncio.run(fetch_all())
-        
+
         # 构建股票数据映射
         stock_data_map = {
             r[0]: {'price': r[1], 'div':  r[2], 'div_yield': r[3]}
             for r in results if r[0]
         }
-        
+
         # 计算投资组合数据
         rows = []
         total = {'market_value': 0, 'profit': 0, 'annual_dividend': 0}
-        
-        for stock_id, code, name, cost_price, shares in stocks:
+
+        for stock in stocks:
+            code = stock.code
+            name = stock.name
+            cost_price = stock.cost_price
+            shares = stock.shares
+
             data = stock_data_map.get(code, {})
             current_price = data.get('price') or cost_price
-            
+
             row = {
                 'code': code,
                 'name': name,

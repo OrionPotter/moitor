@@ -50,27 +50,28 @@ def calculate_cost():
 def get_export_stocks():
     """获取可导出K线数据的股票列表"""
     try:
-        from models.db import MonitorStockRepository, KlineRepository
-        
+        from repositories.monitor_repository import MonitorStockRepository
+        from repositories.kline_repository import KlineRepository
+
         stocks = MonitorStockRepository.get_enabled()
         result = []
-        
+
         for stock in stocks:
-            code = stock[1]
-            name = stock[2]
+            code = stock.code
+            name = stock.name
             latest_date = KlineRepository.get_latest_date(code)
-            
+
             result.append({
                 'code': code,
                 'name': name,
                 'latest_date': latest_date
             })
-        
+
         return jsonify({
             'status': 'success',
             'data': result
         })
-    
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -90,13 +91,14 @@ def export_kline():
         
         if format_type not in ['csv', 'excel']:
             return jsonify({'status': 'error', 'message': '不支持的导出格式'}), 400
-        
-        from models.db import KlineRepository, MonitorStockRepository
-        
+
+        from repositories.kline_repository import KlineRepository
+        from repositories.monitor_repository import MonitorStockRepository
+
         # 获取股票名称
         stock = MonitorStockRepository.get_by_code(code)
-        stock_name = stock[2] if stock else code
-        
+        stock_name = stock.name if stock else code
+
         # 获取K线数据
         df = KlineRepository.export_kline_data(code, start_date, end_date)
         

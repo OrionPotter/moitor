@@ -1,4 +1,4 @@
-from models.db import get_db_conn
+from utils.db import get_db_conn
 
 
 class XueqiuCubeRepository:
@@ -15,7 +15,7 @@ class XueqiuCubeRepository:
                 ORDER BY id
             ''')
             rows = cursor.fetchall()
-            from models.entities.xueqiu_cube import XueqiuCube
+            from models.xueqiu_cube import XueqiuCube
             return [
                 XueqiuCube(
                     id=row[0],
@@ -40,7 +40,7 @@ class XueqiuCubeRepository:
             ''', (cube_symbol,))
             row = cursor.fetchone()
             if row:
-                from models.entities.xueqiu_cube import XueqiuCube
+                from models.xueqiu_cube import XueqiuCube
                 return XueqiuCube(
                     id=row[0],
                     cube_symbol=row[1],

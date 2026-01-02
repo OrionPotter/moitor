@@ -16,6 +16,22 @@ def create_app():
     """应用工厂"""
     app = Flask(__name__)
     CORS(app)
+
+    # 添加请求中间件来诊断队列问题
+    @app.before_request
+    def log_request():
+        from flask import request
+        import time
+        if not request.path.startswith('/static'):
+            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 请求开始: {request.method} {request.path}")
+
+    @app.after_request
+    def log_response(response):
+        from flask import request
+        import time
+        if not request.path.startswith('/static'):
+            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 请求完成: {request.method} {request.path} - 状态: {response.status_code}")
+        return response
     
     # 注册蓝图
     from api.portfolio_routes import portfolio_routes
@@ -78,4 +94,18 @@ if __name__ == '__main__':
         start_background_tasks(app)
     
     logger.info("Flask 启动中：http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+
+    # 检查是否使用生产服务器
+    if os.getenv('GUNICORN'):
+        # Gunicorn环境
+        logger.info("运行在Gunicorn环境中")
+    elif os.getenv('WAITRESS'):
+        # Waitress环境
+        logger.info("运行在Waitress环境中")
+    else:
+        # 开发环境使用Flask开发服务器
+        logger.info("运行在开发环境")
+        logger.info("生产环境启动方式:")
+        logger.info("  Windows: pip install waitress && waitress-serve --port=5000 --threads=4 app:app")
+        logger.info("  Linux/Mac: pip install gunicorn gevent && gunicorn -c gunicorn_config.py app:app")
+        app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

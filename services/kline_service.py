@@ -4,7 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from models.db import KlineRepository, MonitorStockRepository
+from repositories.kline_repository import KlineRepository
+from repositories.monitor_repository import MonitorStockRepository
 from utils.logger import get_logger
 
 
@@ -80,7 +81,7 @@ class KlineService:
         """批量更新K线数据"""
         if force_update:
             stocks = MonitorStockRepository.get_enabled()
-            codes = [s[1] for s in stocks]
+            codes = [s.code for s in stocks]
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 强制更新 {len(codes)} 只股票的K线")
         else:
             codes = KlineRepository.get_need_update(days=1)
@@ -179,10 +180,10 @@ class KlineService:
             stocks = MonitorStockRepository.get_enabled()
             if not stocks:
                 return False, "没有启用的监控股票"
-            
-            codes = [s[1] for s in stocks]
+
+            codes = [s.code for s in stocks]
             latest_dates = []
-            
+
             for code in codes:
                 latest = KlineRepository.get_latest_date(code)
                 if latest:

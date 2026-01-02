@@ -1,6 +1,6 @@
 # api/portfolio_routes.py
 from flask import Blueprint, request, jsonify
-from models.db import StockRepository
+from repositories.portfolio_repository import StockRepository
 from services.portfolio_service import PortfolioService
 from datetime import datetime
 

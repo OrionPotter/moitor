@@ -1,6 +1,7 @@
 # api/admin_routes.py
 from flask import Blueprint, request, jsonify
-from models.db import StockRepository, MonitorStockRepository
+from repositories.portfolio_repository import StockRepository
+from repositories.monitor_repository import MonitorStockRepository
 from datetime import datetime
 
 admin_routes = Blueprint('admin', __name__)
@@ -13,10 +14,7 @@ def list_stocks():
     stocks = StockRepository.get_all()
     return jsonify({
         'status': 'success',
-        'data': [
-            {'id': s[0], 'code': s[1], 'name': s[2], 'cost_price': s[3], 'shares': s[4]}
-            for s in stocks
-        ]
+        'data': [s.to_dict() for s in stocks]
     })
 
 @admin_routes.route('/stocks', methods=['POST'])
@@ -51,13 +49,7 @@ def list_monitor_stocks():
     stocks = MonitorStockRepository.get_all()
     return jsonify({
         'status': 'success',
-        'data':  [
-            {
-                'id': s[0], 'code': s[1], 'name': s[2], 'timeframe': s[3],
-                'reasonable_pe_min': s[4], 'reasonable_pe_max': s[5], 'enabled': bool(s[6])
-            }
-            for s in stocks
-        ]
+        'data': [s.to_dict() for s in stocks]
     })
 
 @admin_routes.route('/monitor-stocks', methods=['POST'])
@@ -107,7 +99,7 @@ def toggle_monitor_stock(code):
 @admin_routes.route('/xueqiu-cubes', methods=['GET'])
 def list_xueqiu_cubes():
     """列出所有雪球组合"""
-    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    from repositories.xueqiu_repository import XueqiuCubeRepository
     cubes = XueqiuCubeRepository.get_all()
     return jsonify({
         'status': 'success',
@@ -117,7 +109,7 @@ def list_xueqiu_cubes():
 @admin_routes.route('/xueqiu-cubes', methods=['POST'])
 def create_xueqiu_cube():
     """创建雪球组合"""
-    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    from repositories.xueqiu_repository import XueqiuCubeRepository
     data = request.get_json()
     success, msg = XueqiuCubeRepository.add(
         data['cube_symbol'], data['cube_name'], data.get('enabled', True)
@@ -127,7 +119,7 @@ def create_xueqiu_cube():
 @admin_routes.route('/xueqiu-cubes/<cube_symbol>', methods=['PUT'])
 def update_xueqiu_cube(cube_symbol):
     """更新雪球组合"""
-    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    from repositories.xueqiu_repository import XueqiuCubeRepository
     data = request.get_json()
     success = XueqiuCubeRepository.update(
         cube_symbol, data['cube_name'], data.get('enabled', True)
@@ -140,7 +132,7 @@ def update_xueqiu_cube(cube_symbol):
 @admin_routes.route('/xueqiu-cubes/<cube_symbol>', methods=['DELETE'])
 def delete_xueqiu_cube(cube_symbol):
     """删除雪球组合"""
-    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    from repositories.xueqiu_repository import XueqiuCubeRepository
     success = XueqiuCubeRepository.delete(cube_symbol)
     return jsonify({
         'status': 'success' if success else 'error',
@@ -150,7 +142,7 @@ def delete_xueqiu_cube(cube_symbol):
 @admin_routes.route('/xueqiu-cubes/<cube_symbol>/toggle', methods=['POST'])
 def toggle_xueqiu_cube(cube_symbol):
     """启用/禁用雪球组合"""
-    from models.repositories.xueqiu_cube_repository import XueqiuCubeRepository
+    from repositories.xueqiu_repository import XueqiuCubeRepository
     data = request.get_json()
     success = XueqiuCubeRepository.toggle_enabled(cube_symbol, data.get('enabled', True))
     return jsonify({
