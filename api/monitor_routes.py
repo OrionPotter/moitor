@@ -3,14 +3,33 @@ from flask import Blueprint, request, jsonify
 from services.monitor_service import MonitorService
 from datetime import datetime
 import threading
+import time
 
 monitor_routes = Blueprint('monitor', __name__)
+
+# 内存缓存
+_monitor_cache = {
+    'data': None,
+    'timestamp': None,
+    'lock': threading.Lock()
+}
+_CACHE_TTL = 60  # 缓存有效期60秒
 
 
 @monitor_routes.route('', methods=['GET'])
 def get_monitor():
     """获取监控数据"""
     try:
+        current_time = time.time()
+        
+        # 检查缓存是否有效
+        with _monitor_cache['lock']:
+            if (_monitor_cache['data'] is not None and 
+                _monitor_cache['timestamp'] is not None and 
+                current_time - _monitor_cache['timestamp'] < _CACHE_TTL):
+                return jsonify(_monitor_cache['data'])
+        
+        # 缓存过期或不存在，重新获取数据
         stocks = MonitorService.get_monitor_data()
         
         # 丰富数据
@@ -44,11 +63,18 @@ def get_monitor():
                 'ema42':  stock.get('ema42'),
             }, stock.get('timeframe'))
         
-        return jsonify({
+        result = {
             'status': 'success',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'stocks': stocks
-        })
+        }
+        
+        # 更新缓存
+        with _monitor_cache['lock']:
+            _monitor_cache['data'] = result
+            _monitor_cache['timestamp'] = current_time
+        
+        return jsonify(result)
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

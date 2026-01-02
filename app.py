@@ -89,23 +89,4 @@ def start_background_tasks(app):
 
 if __name__ == '__main__':
     app = create_app()
-    
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        start_background_tasks(app)
-    
-    logger.info("Flask 启动中：http://localhost:5000")
-
-    # 检查是否使用生产服务器
-    if os.getenv('GUNICORN'):
-        # Gunicorn环境
-        logger.info("运行在Gunicorn环境中")
-    elif os.getenv('WAITRESS'):
-        # Waitress环境
-        logger.info("运行在Waitress环境中")
-    else:
-        # 开发环境使用Flask开发服务器
-        logger.info("运行在开发环境")
-        logger.info("生产环境启动方式:")
-        logger.info("  Windows: pip install waitress && waitress-serve --port=5000 --threads=4 app:app")
-        logger.info("  Linux/Mac: pip install gunicorn gevent && gunicorn -c gunicorn_config.py app:app")
-        app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
