@@ -71,7 +71,8 @@
                         <td></td><td></td><td></td>
                         <td class="text-end" id="sum-market-value">-</td>
                         <td class="text-end" id="sum-profit">-</td>
-                        <td></td><td></td>
+                        <td></td>
+                        <td class="text-end" id="sum-dividend-yield">-</td>
                         <td class="text-end" id="sum-annual-dividend">-</td>
                     </tr>
                 </tfoot>
@@ -137,6 +138,7 @@
                     sumProfitElem.textContent = formatMoney(data.summary.profit);
                     // 设置总计盈亏的颜色
                     sumProfitElem.className = 'text-end ' + (data.summary.profit >= 0 ? 'text-profit-up' : 'text-profit-down');
+                    document.getElementById('sum-dividend-yield').textContent = formatPercent(data.summary.dividend_yield);
                     document.getElementById('sum-annual-dividend').textContent = formatMoney(data.summary.annual_dividend);
                     
                     // 更新时间标签

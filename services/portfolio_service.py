@@ -158,4 +158,10 @@ class PortfolioService:
             total['profit'] += row['profit']
             total['annual_dividend'] += row['annual_dividend_income']
         
+        # 计算总股息率：每年分红金额总计 / 总市值总计
+        if total['market_value'] > 0:
+            total['dividend_yield'] = round(total['annual_dividend'] / total['market_value'] * 100, 2)
+        else:
+            total['dividend_yield'] = 0
+        
         return rows, total
