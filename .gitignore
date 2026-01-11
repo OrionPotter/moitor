@@ -71,6 +71,7 @@ dmypy.json
 # ---- System / OS ----
 .DS_Store
 Thumbs.db
+*.db
 
 # ---- Logs ----
 *.log
