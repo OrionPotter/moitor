@@ -19,8 +19,25 @@ logger = get_logger('app')
 async def lifespan(app: FastAPI):
     # 启动事件
     start_background_tasks()
+    
+    # 启动定时任务调度器
+    from services.scheduler_service import SchedulerService
+    SchedulerService.start()
+    
+    # 添加定时任务：每天15:05执行K线更新
+    if os.getenv('AUTO_UPDATE_KLINE', 'true').lower() == 'true':
+        from services.kline_service import KlineService
+        SchedulerService.add_cron_job(
+            KlineService.auto_update_kline_data,
+            hour=15,
+            minute=5,
+            job_id='daily_kline_update'
+        )
+    
     yield
-    # 关闭事件（如果需要）
+    # 关闭事件
+    from services.scheduler_service import SchedulerService
+    SchedulerService.shutdown()
 
 app = FastAPI(lifespan=lifespan)
 
