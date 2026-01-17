@@ -69,21 +69,27 @@ class PortfolioService:
         return stock_code, None, None, None
     
     @staticmethod
-    def get_real_time_price(stock_code, max_retries=3):
-        """获取单只股票实时价格（同步方法，用于向后兼容）
-        
+    async def get_real_time_price_async(stock_code, max_retries=3):
+        """获取单只股票实时价格（异步方法）
+
         Returns:
             tuple: (stock_code, current_price, dividend_ttm, dividend_yield_ttm)
         """
-        async def fetch():
-            headers = PortfolioService._get_headers()
-            async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
-                return await PortfolioService._fetch_stock_price(session, stock_code)
-        
-        return asyncio.run(fetch())
+        headers = PortfolioService._get_headers()
+        async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
+            return await PortfolioService._fetch_stock_price(session, stock_code)
+
+    @staticmethod
+    def get_real_time_price(stock_code, max_retries=3):
+        """获取单只股票实时价格（同步方法，用于向后兼容）
+
+        Returns:
+            tuple: (stock_code, current_price, dividend_ttm, dividend_yield_ttm)
+        """
+        return asyncio.run(PortfolioService.get_real_time_price_async(stock_code, max_retries))
     
     @staticmethod
-    def get_portfolio_data():
+    async def get_portfolio_data():
         """获取完整投资组合数据
 
         Returns:
@@ -93,7 +99,7 @@ class PortfolioService:
         start_time = time.time()
 
         # 获取所有股票
-        stocks = StockRepository.get_all()
+        stocks = await StockRepository.get_all()
         if not stocks:
             logger.warning("投资组合为空")
             return [], {'market_value': 0, 'profit':  0, 'annual_dividend': 0}
@@ -101,30 +107,26 @@ class PortfolioService:
         stock_codes = [stock.code for stock in stocks]
         logger.info(f"开始获取 {len(stock_codes)} 只股票的实时价格")
 
-        # 使用asyncio运行异步函数
-        async def fetch_all():
-            headers = PortfolioService._get_headers()
-            connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
+        headers = PortfolioService._get_headers()
+        connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
 
-            async with aiohttp.ClientSession(headers=headers, connector=connector, trust_env=False) as session:
-                # 创建所有异步任务
-                tasks = [PortfolioService._fetch_stock_price(session, code) for code in stock_codes]
+        async with aiohttp.ClientSession(headers=headers, connector=connector, trust_env=False) as session:
+            # 创建所有异步任务
+            tasks = [PortfolioService._fetch_stock_price(session, code) for code in stock_codes]
 
-                # 并发执行所有任务
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 并发执行所有任务
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # 处理结果
-                processed_results = []
-                for result in results:
-                    if isinstance(result, Exception):
-                        logger.error(f"获取股票数据时发生异常: {result}")
-                        processed_results.append((None, None, None, None))
-                    else:
-                        processed_results.append(result)
+            # 处理结果
+            processed_results = []
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(f"获取股票数据时发生异常: {result}")
+                    processed_results.append((None, None, None, None))
+                else:
+                    processed_results.append(result)
 
-                return processed_results
-
-        results = asyncio.run(fetch_all())
+            results = processed_results
 
         # 构建股票数据映射
         stock_data_map = {

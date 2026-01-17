@@ -54,7 +54,7 @@ class XueqiuService:
             return None
     
     @staticmethod
-    def _get_cube_name(cube_symbol: str) -> str:
+    async def _get_cube_name(cube_symbol: str) -> str:
         """从数据库获取组合名称
         
         Args:
@@ -64,27 +64,17 @@ class XueqiuService:
             组合名称
         """
         from repositories.xueqiu_repository import XueqiuCubeRepository
-        cube = XueqiuCubeRepository.get_by_symbol(cube_symbol)
+        cube = await XueqiuCubeRepository.get_by_symbol(cube_symbol)
         return cube.cube_name if cube else cube_symbol
     
     @staticmethod
     def get_all_cubes_data() -> Dict[str, List[Dict]]:
-        """获取所有配置的雪球组合数据（异步并发请求）
+        """获取所有配置的雪球组合数据（同步包装器）
 
         Returns:
             字典，key为组合ID，value为调仓历史列表
         """
-        from repositories.xueqiu_repository import XueqiuCubeRepository
-
-        # 从数据库获取启用的组合列表
-        cube_symbols = XueqiuCubeRepository.get_enabled_symbols()
-
-        if not cube_symbols:
-            logger.warning("未配置启用的雪球组合")
-            return {}
-
-        # 使用asyncio运行异步函数
-        return asyncio.run(XueqiuService._fetch_all_cubes_async(cube_symbols))
+        return asyncio.run(XueqiuService.get_all_cubes_data_async())
 
     @staticmethod
     async def get_all_cubes_data_async() -> Dict[str, List[Dict]]:
@@ -96,7 +86,7 @@ class XueqiuService:
         from repositories.xueqiu_repository import XueqiuCubeRepository
 
         # 从数据库获取启用的组合列表
-        cube_symbols = XueqiuCubeRepository.get_enabled_symbols()
+        cube_symbols = await XueqiuCubeRepository.get_enabled_symbols()
 
         if not cube_symbols:
             logger.warning("未配置启用的雪球组合")
@@ -142,11 +132,12 @@ class XueqiuService:
         return result
     
     @staticmethod
-    def format_rebalancing_data(cube_symbol: str, history: List[Dict]) -> List[Dict]:
+    def format_rebalancing_data(cube_symbol: str, cube_name: str, history: List[Dict]) -> List[Dict]:
         """格式化调仓数据，便于前端展示
         
         Args:
             cube_symbol: 组合ID
+            cube_name: 组合名称
             history: 调仓历史原始数据
         
         Returns:
@@ -201,7 +192,7 @@ class XueqiuService:
                 
                 formatted.append({
                     'cube_symbol': cube_symbol,
-                    'cube_name': XueqiuService._get_cube_name(cube_symbol),
+                    'cube_name': cube_name,
                     'rebalancing_time': rebalancing_time,
                     'comment': item.get('comment', ''),
                     'changes': changes,
@@ -221,13 +212,28 @@ class XueqiuService:
         Returns:
             字典，key为组合ID，value为格式化后的调仓数据列表
         """
-        all_data = await XueqiuService.get_all_cubes_data_async()
-        result = {}
+        try:
+            all_data = await XueqiuService.get_all_cubes_data_async()
+            
+            # 批量获取所有组合名称
+            from repositories.xueqiu_repository import XueqiuCubeRepository
+            cubes = await XueqiuCubeRepository.get_all()
+            
+            # 构建组合名称映射
+            cube_name_map = {}
+            for cube in cubes:
+                cube_name_map[cube.cube_symbol] = cube.cube_name
+            
+            # 直接格式化所有数据（format_rebalancing_data 是同步方法）
+            result = {}
+            for cube_symbol, history in all_data.items():
+                cube_name = cube_name_map.get(cube_symbol, cube_symbol)
+                result[cube_symbol] = XueqiuService.format_rebalancing_data(cube_symbol, cube_name, history)
 
-        for cube_symbol, history in all_data.items():
-            result[cube_symbol] = XueqiuService.format_rebalancing_data(cube_symbol, history)
-
-        return result
+            return result
+        except Exception as e:
+            logger.error(f"get_all_formatted_data_async 错误: {e}", exc_info=True)
+            raise
 
     @staticmethod
     def get_all_formatted_data() -> Dict[str, List[Dict]]:

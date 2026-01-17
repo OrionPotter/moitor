@@ -37,28 +37,28 @@ class CalculateCostRequest(BaseModel):
 def calculate_cost(data: CalculateCostRequest):
     try:
         positions = data.positions
-        
+
         if not positions:
             raise HTTPException(status_code=400, detail='请提供买入记录')
-        
+
         total_shares = 0
         total_cost = 0
-        
+
         for pos in positions:
             price = pos.price
             shares = pos.shares
-            
+
             if price <= 0 or shares <= 0:
                 raise HTTPException(status_code=400, detail='价格和股数必须大于0')
-            
+
             total_shares += shares
             total_cost += price * shares
-        
+
         if total_shares == 0:
             raise HTTPException(status_code=400, detail='总持仓数不能为0')
-        
+
         avg_cost = round(total_cost / total_shares, 2)
-        
+
         return {
             'status': 'success',
             'data': {
@@ -67,7 +67,7 @@ def calculate_cost(data: CalculateCostRequest):
                 'total_cost': round(total_cost, 2)
             }
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -75,20 +75,20 @@ def calculate_cost(data: CalculateCostRequest):
 
 
 @tools_router.get('/export-kline/stocks')
-def get_export_stocks():
+async def get_export_stocks():
     """获取可导出K线数据的股票列表"""
     logger.info("GET /api/tools/export-kline/stocks - 请求开始")
     try:
         from repositories.monitor_repository import MonitorStockRepository
         from repositories.kline_repository import KlineRepository
 
-        stocks = MonitorStockRepository.get_enabled()
+        stocks = await MonitorStockRepository.get_enabled()
         result = []
 
         for stock in stocks:
             code = stock.code
             name = stock.name
-            latest_date = KlineRepository.get_latest_date(code)
+            latest_date = await KlineRepository.get_latest_date(code)
 
             result.append({
                 'code': code,
@@ -118,17 +118,17 @@ class ExportKlineRequest(BaseModel):
 
 
 @tools_router.post('/export-kline')
-def export_kline(data: ExportKlineRequest):
+async def export_kline(data: ExportKlineRequest):
     """导出K线数据"""
     try:
         code = data.code
         format_type = data.format
         start_date = data.start_date
         end_date = data.end_date
-        
+
         if not code:
             raise HTTPException(status_code=400, detail='请选择股票')
-        
+
         if format_type not in ['csv', 'excel']:
             raise HTTPException(status_code=400, detail='不支持的导出格式')
 
@@ -136,46 +136,46 @@ def export_kline(data: ExportKlineRequest):
         from repositories.monitor_repository import MonitorStockRepository
 
         # 获取股票名称
-        stock = MonitorStockRepository.get_by_code(code)
+        stock = await MonitorStockRepository.get_by_code(code)
         stock_name = stock.name if stock else code
 
         # 获取K线数据
-        df = KlineRepository.export_kline_data(code, start_date, end_date)
-        
+        df = await KlineRepository.export_kline_data(code, start_date, end_date)
+
         if df is None or df.empty:
             raise HTTPException(status_code=400, detail='没有可导出的数据')
-        
+
         # 生成文件名
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if format_type == 'csv':
             filename = f'{stock_name}_{code}_K线_{timestamp}.csv'
-            
+
             # 创建CSV文件
             output = BytesIO()
             df.to_csv(output, index=False, encoding='utf-8-sig')
             output.seek(0)
-            
+
             return StreamingResponse(
                 output,
                 media_type='text/csv',
                 headers={'Content-Disposition': f'attachment; filename="{filename}"'}
             )
-        
+
         else:  # excel
             filename = f'{stock_name}_{code}_K线_{timestamp}.xlsx'
-            
+
             # 创建Excel文件
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='K线数据')
             output.seek(0)
-            
+
             return StreamingResponse(
                 output,
                 media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 headers={'Content-Disposition': f'attachment; filename="{filename}"'}
             )
-    
+
     except HTTPException:
         raise
     except Exception as e:

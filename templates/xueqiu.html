@@ -218,15 +218,11 @@
             }
         }
 
-        // 在页面加载时就预加载数据（不等待DOMContentLoaded）
-        loadData();
-
-        // 页面加载完成后也执行一次（确保DOM已准备好）
+        // 页面加载完成后执行
         document.addEventListener('DOMContentLoaded', loadData);
-
+        
         // 绑定刷新按钮的点击事件
-        document.getElementById('refresh-btn').addEventListener('click', loadData);
-    </script>
+        document.getElementById('refresh-btn').addEventListener('click', loadData);    </script>
     
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.1/js/bootstrap.bundle.min.js"></script>

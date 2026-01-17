@@ -23,13 +23,13 @@ def _clean_nan_values(obj):
 
 
 @xueqiu_router.get('')
-def get_xueqiu_data():
+async def get_xueqiu_data():
     """获取所有雪球组合的调仓数据"""
     start_time = time.time()
     logger.info("GET /api/xueqiu - 请求开始")
     try:
-        # 调用同步方法，内部使用asyncio.run()运行异步代码
-        all_data = XueqiuService.get_all_formatted_data()
+        # 调用异步方法
+        all_data = await XueqiuService.get_all_formatted_data_async()
 
         elapsed = time.time() - start_time
         result = {
@@ -48,26 +48,25 @@ def get_xueqiu_data():
 
 
 @xueqiu_router.get('/{cube_symbol}')
-def get_cube_data(cube_symbol: str):
+async def get_cube_data(cube_symbol: str):
     """获取指定雪球组合的调仓数据"""
     logger.info(f"GET /api/xueqiu/{cube_symbol} - 请求开始")
     try:
-        # 在同步函数中运行异步代码
-        import asyncio
-        async def fetch_single():
-            headers = XueqiuService._get_headers()
-            import aiohttp
-            async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
-                history = await XueqiuService._fetch_cube_data(session, cube_symbol)
-            return history
-
-        history = asyncio.run(fetch_single())
+        headers = XueqiuService._get_headers()
+        import aiohttp
+        async with aiohttp.ClientSession(headers=headers, trust_env=False) as session:
+            history = await XueqiuService._fetch_cube_data(session, cube_symbol)
 
         if history is None:
             logger.warning(f"GET /api/xueqiu/{cube_symbol} - 获取数据失败")
             raise HTTPException(status_code=500, detail='获取数据失败')
 
-        formatted = XueqiuService.format_rebalancing_data(cube_symbol, history)
+        # 获取组合名称
+        from repositories.xueqiu_repository import XueqiuCubeRepository
+        cube = await XueqiuCubeRepository.get_by_symbol(cube_symbol)
+        cube_name = cube.cube_name if cube else cube_symbol
+
+        formatted = XueqiuService.format_rebalancing_data(cube_symbol, cube_name, history)
 
         result = {
             'status': 'success',

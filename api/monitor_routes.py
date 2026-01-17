@@ -1,4 +1,3 @@
-# api/monitor_routes.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -36,7 +35,7 @@ def _clean_nan_values(obj):
 
 
 @monitor_router.get('')
-def get_monitor():
+async def get_monitor():
     """获取监控数据"""
     logger.info("GET /api/monitor - 请求开始")
     try:
@@ -52,7 +51,7 @@ def get_monitor():
 
         # 缓存过期或不存在，重新获取数据
         logger.info("GET /api/monitor - 缓存过期，重新获取数据")
-        stocks = MonitorService.get_monitor_data()
+        stocks = await MonitorService.get_monitor_data()
 
         # 丰富数据
         for stock in stocks:
@@ -107,10 +106,10 @@ def get_monitor():
 
 
 @monitor_router.get('/stocks')
-def list_monitor_stocks():
+async def list_monitor_stocks():
     """列表监控股票配置"""
     try:
-        stocks = MonitorService.get_all_monitor_stocks()
+        stocks = await MonitorService.get_all_monitor_stocks()
         return {'status': 'success', 'data': stocks}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -136,9 +135,9 @@ class ToggleStock(BaseModel):
 
 
 @monitor_router.post('/stocks')
-def create_monitor_stock(data: MonitorStockCreate):
+async def create_monitor_stock(data: MonitorStockCreate):
     """创建监控股票"""
-    success, msg = MonitorService.create_monitor_stock(
+    success, msg = await MonitorService.create_monitor_stock(
         data.code, data.name, data.timeframe,
         data.reasonable_pe_min, data.reasonable_pe_max
     )
@@ -146,9 +145,9 @@ def create_monitor_stock(data: MonitorStockCreate):
 
 
 @monitor_router.put('/stocks/{code}')
-def update_monitor_stock(code: str, data: MonitorStockUpdate):
+async def update_monitor_stock(code: str, data: MonitorStockUpdate):
     """更新监控股票"""
-    success, msg = MonitorService.update_monitor_stock(
+    success, msg = await MonitorService.update_monitor_stock(
         code, data.name, data.timeframe,
         data.reasonable_pe_min, data.reasonable_pe_max
     )
@@ -156,16 +155,16 @@ def update_monitor_stock(code: str, data: MonitorStockUpdate):
 
 
 @monitor_router.delete('/stocks/{code}')
-def delete_monitor_stock(code: str):
+async def delete_monitor_stock(code: str):
     """删除监控股票"""
-    success, msg = MonitorService.delete_monitor_stock(code)
+    success, msg = await MonitorService.delete_monitor_stock(code)
     return {'status': 'success' if success else 'error', 'message': msg}
 
 
 @monitor_router.post('/stocks/{code}/toggle')
-def toggle_monitor_stock(code: str, data: ToggleStock):
+async def toggle_monitor_stock(code: str, data: ToggleStock):
     """启用/禁用监控股票"""
-    success, msg = MonitorService.toggle_monitor_stock(code, data.enabled)
+    success, msg = await MonitorService.toggle_monitor_stock(code, data.enabled)
     return {'status': 'success' if success else 'error', 'message': msg}
 
 
@@ -174,15 +173,15 @@ class UpdateKline(BaseModel):
 
 
 @monitor_router.post('/update-kline')
-def update_kline(data: UpdateKline):
+async def update_kline(data: UpdateKline):
     """手动更新K线数据"""
     try:
         from services.kline_service import KlineService
-        
+
         def task():
             KlineService.batch_update_kline(force_update=data.force_update, max_workers=3)
-        
+
         threading.Thread(target=task, daemon=True).start()
         return {'status': 'success', 'message': 'K线更新任务已启动'}
-    except Exception as e: 
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

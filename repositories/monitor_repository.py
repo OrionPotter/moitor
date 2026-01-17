@@ -1,4 +1,3 @@
-# repositories/monitor_repository.py
 from utils.db import get_db_conn
 from models.monitor_stock import MonitorStock
 from datetime import datetime
@@ -8,17 +7,15 @@ logger = get_logger('monitor_repository')
 
 
 class MonitorStockRepository:
-    """监控股票数据仓储层"""
+    """监控股票数据仓储层（异步版本）"""
 
     @staticmethod
-    def get_all():
+    async def get_all():
         """获取所有监控股票"""
-        logger.info("SQL: SELECT * FROM monitor_stocks ORDER BY code")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM monitor_stocks ORDER BY code')
-            rows = cursor.fetchall()
-            logger.info(f"SQL: 查询返回 {len(rows)} 条记录")
+        logger.debug("SQL: SELECT * FROM monitor_stocks ORDER BY code")
+        async with get_db_conn() as conn:
+            rows = await conn.fetch('SELECT * FROM monitor_stocks ORDER BY code')
+            logger.debug(f"SQL: 查询返回 {len(rows)} 条记录")
             return [
                 MonitorStock(
                     id=row['id'],
@@ -35,14 +32,12 @@ class MonitorStockRepository:
             ]
 
     @staticmethod
-    def get_enabled():
+    async def get_enabled():
         """获取所有启用的监控股票"""
-        logger.info("SQL: SELECT * FROM monitor_stocks WHERE enabled = 1 ORDER BY code")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM monitor_stocks WHERE enabled = 1 ORDER BY code')
-            rows = cursor.fetchall()
-            logger.info(f"SQL: 查询返回 {len(rows)} 条记录")
+        logger.debug("SQL: SELECT * FROM monitor_stocks WHERE enabled = 1 ORDER BY code")
+        async with get_db_conn() as conn:
+            rows = await conn.fetch('SELECT * FROM monitor_stocks WHERE enabled = 1 ORDER BY code')
+            logger.debug(f"SQL: 查询返回 {len(rows)} 条记录")
             return [
                 MonitorStock(
                     id=row['id'],
@@ -59,15 +54,13 @@ class MonitorStockRepository:
             ]
 
     @staticmethod
-    def get_by_code(code):
+    async def get_by_code(code):
         """根据代码获取监控股票"""
-        logger.info(f"SQL: SELECT * FROM monitor_stocks WHERE code = '{code}'")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM monitor_stocks WHERE code = %s', (code,))
-            row = cursor.fetchone()
+        logger.debug(f"SQL: SELECT * FROM monitor_stocks WHERE code = '{code}'")
+        async with get_db_conn() as conn:
+            row = await conn.fetchrow('SELECT * FROM monitor_stocks WHERE code = $1', code)
             if row:
-                logger.info("SQL: 查询返回 1 条记录")
+                logger.debug("SQL: 查询返回 1 条记录")
                 return MonitorStock(
                     id=row['id'],
                     code=row['code'],
@@ -79,24 +72,22 @@ class MonitorStockRepository:
                     created_at=row['created_at'],
                     updated_at=row['updated_at']
                 )
-            logger.info("SQL: 查询返回 0 条记录")
+            logger.debug("SQL: 查询返回 0 条记录")
             return None
 
     @staticmethod
-    def add(code, name, timeframe, reasonable_pe_min=15, reasonable_pe_max=20):
+    async def add(code, name, timeframe, reasonable_pe_min=15, reasonable_pe_max=20):
         """添加监控股票"""
         logger.info(f"SQL: INSERT INTO monitor_stocks (code, name, timeframe, reasonable_pe_min, reasonable_pe_max) VALUES ('{code}', '{name}', '{timeframe}', {reasonable_pe_min}, {reasonable_pe_max})")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
+        async with get_db_conn() as conn:
             try:
-                cursor.execute(
+                await conn.execute(
                     '''INSERT INTO monitor_stocks
                        (code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
-                       VALUES (%s, %s, %s, %s, %s)''',
-                    (code, name, timeframe, reasonable_pe_min, reasonable_pe_max)
+                       VALUES ($1, $2, $3, $4, $5)''',
+                    code, name, timeframe, reasonable_pe_min, reasonable_pe_max
                 )
-                conn.commit()
-                logger.info(f"SQL: 插入成功，影响行数: {cursor.rowcount}")
+                logger.info(f"SQL: 插入成功")
                 return True, "添加成功"
             except Exception as e:
                 logger.error(f"SQL: 插入失败: {str(e)}")
@@ -105,43 +96,37 @@ class MonitorStockRepository:
                 return False, str(e)
 
     @staticmethod
-    def update(code, name, timeframe, reasonable_pe_min, reasonable_pe_max):
+    async def update(code, name, timeframe, reasonable_pe_min, reasonable_pe_max):
         """更新监控股票"""
         logger.info(f"SQL: UPDATE monitor_stocks SET name = '{name}', timeframe = '{timeframe}', reasonable_pe_min = {reasonable_pe_min}, reasonable_pe_max = {reasonable_pe_max}, updated_at = CURRENT_TIMESTAMP WHERE code = '{code}'")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        async with get_db_conn() as conn:
+            result = await conn.execute(
                 '''UPDATE monitor_stocks
-                   SET name = %s, timeframe = %s, reasonable_pe_min = %s,
-                       reasonable_pe_max = %s, updated_at = CURRENT_TIMESTAMP
-                   WHERE code = %s''',
-                (name, timeframe, reasonable_pe_min, reasonable_pe_max, code)
+                   SET name = $1, timeframe = $2, reasonable_pe_min = $3,
+                       reasonable_pe_max = $4, updated_at = CURRENT_TIMESTAMP
+                   WHERE code = $5''',
+                name, timeframe, reasonable_pe_min, reasonable_pe_max, code
             )
-            conn.commit()
-            logger.info(f"SQL: 更新成功，影响行数: {cursor.rowcount}")
-            return cursor.rowcount > 0
+            logger.info(f"SQL: 更新成功")
+            return result == 'UPDATE 1'
 
     @staticmethod
-    def delete(code):
+    async def delete(code):
         """删除监控股票"""
         logger.info(f"SQL: DELETE FROM monitor_stocks WHERE code = '{code}'")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM monitor_stocks WHERE code = %s', (code,))
-            conn.commit()
-            logger.info(f"SQL: 删除成功，影响行数: {cursor.rowcount}")
-            return cursor.rowcount > 0
+        async with get_db_conn() as conn:
+            result = await conn.execute('DELETE FROM monitor_stocks WHERE code = $1', code)
+            logger.info(f"SQL: 删除成功")
+            return result == 'DELETE 1'
 
     @staticmethod
-    def toggle_enabled(code, enabled):
+    async def toggle_enabled(code, enabled):
         """启用/禁用监控股票"""
         logger.info(f"SQL: UPDATE monitor_stocks SET enabled = {int(enabled)}, updated_at = CURRENT_TIMESTAMP WHERE code = '{code}'")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                'UPDATE monitor_stocks SET enabled = %s, updated_at = CURRENT_TIMESTAMP WHERE code = %s',
-                (int(enabled), code)
+        async with get_db_conn() as conn:
+            result = await conn.execute(
+                'UPDATE monitor_stocks SET enabled = $1, updated_at = CURRENT_TIMESTAMP WHERE code = $2',
+                int(enabled), code
             )
-            conn.commit()
-            logger.info(f"SQL: 更新成功，影响行数: {cursor.rowcount}")
-            return cursor.rowcount > 0
+            logger.info(f"SQL: 更新成功")
+            return result == 'UPDATE 1'

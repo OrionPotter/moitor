@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS xueqiu_cubes (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 创建股票代码表（沪深京A股）
+CREATE TABLE IF NOT EXISTS stock_list (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    last_update TIMESTAMP,  -- 最后一次K线更新时间
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 创建索引以提高查询性能
 -- portfolio表索引
 CREATE INDEX IF NOT EXISTS idx_portfolio_code ON portfolio(code);
@@ -123,6 +132,11 @@ CREATE INDEX IF NOT EXISTS idx_update_log_status ON kline_update_log(status);
 -- xueqiu_cubes表索引
 CREATE INDEX IF NOT EXISTS idx_xueqiu_cube_symbol ON xueqiu_cubes(cube_symbol);
 CREATE INDEX IF NOT EXISTS idx_xueqiu_enabled ON xueqiu_cubes(enabled);
+
+-- stock_list表索引
+CREATE INDEX IF NOT EXISTS idx_stock_list_name ON stock_list(name);
+CREATE INDEX IF NOT EXISTS idx_stock_list_updated ON stock_list(updated_at);
+CREATE INDEX IF NOT EXISTS idx_stock_list_last_update ON stock_list(last_update);
 
 -- 创建触发器以自动更新 updated_at 字段
 -- portfolio表触发器
@@ -184,6 +198,21 @@ CREATE TRIGGER trigger_update_xueqiu_cubes_updated_at
     BEFORE UPDATE ON xueqiu_cubes
     FOR EACH ROW
     EXECUTE FUNCTION update_xueqiu_cubes_updated_at();
+
+-- stock_list表触发器
+CREATE OR REPLACE FUNCTION update_stock_list_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_stock_list_updated_at ON stock_list;
+CREATE TRIGGER trigger_update_stock_list_updated_at
+    BEFORE UPDATE ON stock_list
+    FOR EACH ROW
+    EXECUTE FUNCTION update_stock_list_updated_at();
 
 -- 插入初始化数据
 -- 投资组合初始数据
@@ -259,3 +288,14 @@ SELECT
 FROM kline_update_log 
 ORDER BY update_date DESC 
 LIMIT 1;
+
+-- EPS 预测缓存表
+CREATE TABLE IF NOT EXISTS eps_cache (
+    code TEXT PRIMARY KEY,
+    eps_value REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- EPS 缓存索引
+CREATE INDEX IF NOT EXISTS idx_eps_cache_updated_at ON eps_cache(updated_at);

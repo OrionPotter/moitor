@@ -39,11 +39,11 @@ class StockUpdate(BaseModel):
 
 
 @portfolio_router.get('')
-def get_portfolio():
+async def get_portfolio():
     """获取投资组合数据"""
     logger.info("GET /api/portfolio - 请求开始")
     try:
-        rows, summary = PortfolioService.get_portfolio_data()
+        rows, summary = await PortfolioService.get_portfolio_data()
         result = {
             'status': 'success',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -60,10 +60,10 @@ def get_portfolio():
 
 
 @portfolio_router.post('')
-def create_stock(data: StockCreate):
+async def create_stock(data: StockCreate):
     """创建股票"""
     logger.info(f"POST /api/portfolio - 创建股票: {data.code} {data.name}, 成本价: {data.cost_price}, 持仓: {data.shares}")
-    success, msg = StockRepository.add(
+    success, msg = await StockRepository.add(
         data.code,
         data.name,
         data.cost_price,
@@ -79,10 +79,10 @@ def create_stock(data: StockCreate):
 
 
 @portfolio_router.put('/{code}')
-def update_stock(code: str, data: StockUpdate):
+async def update_stock(code: str, data: StockUpdate):
     """更新股票"""
     logger.info(f"PUT /api/portfolio/{code} - 更新股票: {data}")
-    success = StockRepository.update(
+    success = await StockRepository.update(
         code,
         data.name,
         data.cost_price,
@@ -98,10 +98,10 @@ def update_stock(code: str, data: StockUpdate):
 
 
 @portfolio_router.delete('/{code}')
-def delete_stock(code: str):
+async def delete_stock(code: str):
     """删除股票"""
     logger.info(f"DELETE /api/portfolio/{code} - 删除股票")
-    success = StockRepository.delete(code)
+    success = await StockRepository.delete(code)
 
     result = {
         'status': 'success' if success else 'error',

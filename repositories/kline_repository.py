@@ -1,4 +1,3 @@
-# repositories/kline_repository.py
 from utils.db import get_db_conn
 from utils.logger import get_logger
 from datetime import datetime
@@ -8,55 +7,161 @@ logger = get_logger('kline_repository')
 
 
 class KlineRepository:
-    """K线数据仓储层"""
+    """K线数据仓储层（异步版本）"""
 
     @staticmethod
-    def save_batch(code, kline_data):
+    async def save_batch(code, kline_data):
         """批量保存K线数据"""
         logger.info(f"SQL: 批量插入/更新 {code} 的 K线数据，数据量: {len(kline_data)}")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
+        async with get_db_conn() as conn:
             try:
                 insert_data = [
-                    (code, row['日期'], row['开盘'], row['收盘'],
+                    (code, row['日期'].strftime('%Y-%m-%d'), row['开盘'], row['收盘'],
                      row['最高'], row['最低'], 0, row.get('amount', 0))
                     for _, row in kline_data.iterrows()
                 ]
-                cursor.executemany(
+                
+                await conn.executemany(
                     '''INSERT INTO stock_kline_data
                        (code, date, open, close, high, low, volume, amount, updated_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                        ON CONFLICT (code, date) DO UPDATE
                        SET open = EXCLUDED.open, close = EXCLUDED.close, high = EXCLUDED.high,
                            low = EXCLUDED.low, volume = EXCLUDED.volume, amount = EXCLUDED.amount,
                            updated_at = CURRENT_TIMESTAMP''',
                     insert_data
                 )
-                conn.commit()
-                logger.info(f"SQL: 批量插入/更新成功，影响行数: {cursor.rowcount}")
+                logger.info(f"SQL: 批量插入/更新成功")
                 return True, len(insert_data)
             except Exception as e:
                 logger.error(f"SQL: 批量插入/更新失败: {str(e)}")
                 return False, str(e)
 
     @staticmethod
-    def get_by_code(code, limit=250):
+    async def save_all_batch(kline_data_dict):
+        """批量保存多只股票的K线数据
+        
+        Args:
+            kline_data_dict: {code: DataFrame} 的字典
+            
+        Returns:
+            tuple: (success_count, total_count, total_records)
+        """
+        if not kline_data_dict:
+            return 0, 0, 0
+        
+        logger.info(f"SQL: 批量保存 {len(kline_data_dict)} 只股票的K线数据")
+        
+        async with get_db_conn() as conn:
+            try:
+                all_insert_data = []
+                total_records = 0
+                saved_count = 0
+                
+                for code, df in kline_data_dict.items():
+                    if df is None or df.empty:
+                        continue
+                    
+                    insert_data = [
+                        (code, row['日期'].strftime('%Y-%m-%d'), row['开盘'], row['收盘'],
+                         row['最高'], row['最低'], 0, row.get('amount', 0))
+                        for _, row in df.iterrows()
+                    ]
+                    all_insert_data.extend(insert_data)
+                    total_records += len(insert_data)
+                    saved_count += 1
+                
+                if not all_insert_data:
+                    return 0, len(kline_data_dict), 0
+                
+                await conn.executemany(
+                    '''INSERT INTO stock_kline_data
+                       (code, date, open, close, high, low, volume, amount, updated_at)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                       ON CONFLICT (code, date) DO UPDATE
+                       SET open = EXCLUDED.open, close = EXCLUDED.close, high = EXCLUDED.high,
+                           low = EXCLUDED.low, volume = EXCLUDED.volume, amount = EXCLUDED.amount,
+                           updated_at = CURRENT_TIMESTAMP''',
+                    all_insert_data
+                )
+                logger.info(f"SQL: 批量保存成功，{saved_count} 只股票，{total_records} 条记录")
+                return saved_count, len(kline_data_dict), total_records
+            except Exception as e:
+                logger.error(f"SQL: 批量保存失败: {str(e)}")
+                return 0, len(kline_data_dict), 0
+
+    @staticmethod
+    async def get_batch_by_codes(codes, limit=250):
+        """批量获取多只股票的K线数据
+
+        Args:
+            codes: 股票代码列表
+            limit: 每只股票返回的最大记录数
+
+        Returns:
+            dict: {code: DataFrame} 的字典
+        """
+        if not codes:
+            return {}
+
+        logger.info(f"SQL: 批量查询 {len(codes)} 只股票的K线数据，每只最多 {limit} 条")
+
+        async with get_db_conn() as conn:
+            # 使用 IN 子句批量查询
+            rows = await conn.fetch(
+                '''SELECT code, date, open, close, high, low, volume, amount
+                   FROM stock_kline_data
+                   WHERE code = ANY($1)
+                   ORDER BY code, date DESC''',
+                codes
+            )
+
+            logger.info(f"SQL: 批量查询返回 {len(rows)} 条记录")
+
+            # 按 code 分组数据
+            code_data = {}
+            for row in rows:
+                code = row['code']
+                if code not in code_data:
+                    code_data[code] = []
+                code_data[code].append({
+                    'date': row['date'],
+                    'open': row['open'],
+                    'close': row['close'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'volume': row['volume'],
+                    'amount': row['amount']
+                })
+
+            # 转换为 DataFrame 并限制数量
+            result = {}
+            for code in codes:
+                if code in code_data and code_data[code]:
+                    data = code_data[code][:limit]  # 限制数量
+                    df = pd.DataFrame(data)
+                    df.columns = ['日期', '开盘', '收盘', '最高', '最低', 'volume', 'amount']
+                    result[code] = df.iloc[::-1]  # 反转回正序
+                else:
+                    result[code] = None
+
+            return result
+
+    @staticmethod
+    async def get_by_code(code, limit=250):
         """获取K线数据（返回DataFrame）"""
-        logger.info(f"SQL: SELECT date, open, close, high, low, volume, amount FROM stock_kline_data WHERE code = '{code}' ORDER BY date DESC LIMIT {limit}")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        logger.debug(f"SQL: SELECT date, open, close, high, low, volume, amount FROM stock_kline_data WHERE code = '{code}' ORDER BY date DESC LIMIT {limit}")
+        async with get_db_conn() as conn:
+            rows = await conn.fetch(
                 '''SELECT date, open, close, high, low, volume, amount
                    FROM stock_kline_data
-                   WHERE code = %s
-                   ORDER BY date DESC LIMIT %s''',
-                (code, limit)
+                   WHERE code = $1
+                   ORDER BY date DESC LIMIT $2''',
+                code, limit
             )
-            rows = cursor.fetchall()
-            logger.info(f"SQL: 查询返回 {len(rows)} 条记录")
+            logger.debug(f"SQL: 查询返回 {len(rows)} 条记录")
 
             if rows:
-                # 将 RealDictRow 转换为字典列表
                 data = [dict(row) for row in rows]
                 df = pd.DataFrame(data)
                 df.columns = ['日期', '开盘', '收盘', '最高', '最低', 'volume', 'amount']
@@ -64,118 +169,159 @@ class KlineRepository:
             return None
 
     @staticmethod
-    def get_kline_objects(code, limit=250):
+    async def get_kline_objects(code, limit=250):
         """获取K线数据（返回KlineData对象列表）"""
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        async with get_db_conn() as conn:
+            rows = await conn.fetch(
                 '''SELECT id, code, date, open, close, high, low, volume, amount, created_at, updated_at
                    FROM stock_kline_data
-                   WHERE code = %s
-                   ORDER BY date DESC LIMIT %s''',
-                (code, limit)
+                   WHERE code = $1
+                   ORDER BY date DESC LIMIT $2''',
+                code, limit
             )
-            rows = cursor.fetchall()
 
             if rows:
                 from models.kline_data import KlineData
                 return [
                     KlineData(
-                        id=row[0],
-                        code=row[1],
-                        date=row[2],
-                        open=row[3],
-                        close=row[4],
-                        high=row[5],
-                        low=row[6],
-                        volume=row[7],
-                        amount=row[8],
-                        created_at=row[9],
-                        updated_at=row[10]
+                        id=row['id'],
+                        code=row['code'],
+                        date=row['date'],
+                        open=row['open'],
+                        close=row['close'],
+                        high=row['high'],
+                        low=row['low'],
+                        volume=row['volume'],
+                        amount=row['amount'],
+                        created_at=row['created_at'],
+                        updated_at=row['updated_at']
                     )
                     for row in rows[::-1]  # 反转回正序
                 ]
             return None
 
     @staticmethod
-    def get_latest_date(code):
+    async def get_latest_date(code):
         """获取最新K线日期"""
-        logger.info(f"SQL: SELECT MAX(date) FROM stock_kline_data WHERE code = '{code}'")
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT MAX(date) FROM stock_kline_data WHERE code = %s', (code,))
-            result = cursor.fetchone()
-            if result:
-                latest_date = result['max'] if isinstance(result, dict) else result[0]
-                logger.info(f"SQL: 查询返回最新日期: {latest_date}")
-                return latest_date
-            logger.info("SQL: 查询返回 None")
-            return None
+        logger.debug(f"SQL: SELECT MAX(date) FROM stock_kline_data WHERE code = '{code}'")
+        async with get_db_conn() as conn:
+            result = await conn.fetchval(
+                'SELECT MAX(date) FROM stock_kline_data WHERE code = $1',
+                code
+            )
+            logger.debug(f"SQL: 查询返回最新日期: {result}")
+            return result
 
     @staticmethod
-    def get_need_update(days=1):
+    async def get_latest_dates_batch(codes):
+        """批量获取多只股票的最新K线日期
+        
+        Args:
+            codes: 股票代码列表
+            
+        Returns:
+            dict: {code: latest_date} 的字典
+        """
+        if not codes:
+            return {}
+        
+        logger.debug(f"SQL: 批量查询 {len(codes)} 只股票的最新日期")
+        
+        async with get_db_conn() as conn:
+            # 使用 ANY 子句批量查询
+            results = await conn.fetch(
+                '''SELECT code, MAX(date) as max_date 
+                   FROM stock_kline_data 
+                   WHERE code = ANY($1) 
+                   GROUP BY code''',
+                codes
+            )
+            
+            # 构建结果字典
+            latest_dates = {row['code']: row['max_date'] for row in results}
+            
+            # 为没有数据的股票返回 None
+            for code in codes:
+                if code not in latest_dates:
+                    latest_dates[code] = None
+            
+            logger.debug(f"SQL: 批量查询完成，返回 {len([v for v in latest_dates.values() if v is not None])} 条有效记录")
+            return latest_dates
+
+    @staticmethod
+    async def get_need_update(days=1):
         """获取需要更新K线的股票"""
         from repositories.monitor_repository import MonitorStockRepository
-        stocks = MonitorStockRepository.get_enabled()
+        stocks = await MonitorStockRepository.get_enabled()
         codes = [s.code for s in stocks]
 
-        need_update = []
-        for code in codes:
-            latest = KlineRepository.get_latest_date(code)
-            if not latest or (datetime.now() - datetime.strptime(latest, '%Y-%m-%d')).days >= days:
-                need_update.append(code)
+        if not codes:
+            return []
 
+        # 使用批量查询一次性获取所有股票的最新日期
+        latest_dates_dict = await KlineRepository.get_latest_dates_batch(codes)
+        
+        # 过滤出需要更新的股票
+        need_update = []
+        now = datetime.now()
+        
+        for code in codes:
+            latest = latest_dates_dict.get(code)
+            if not latest:
+                need_update.append(code)
+            else:
+                latest_dt = datetime.strptime(latest, '%Y-%m-%d')
+                if (now - latest_dt).days >= days:
+                    need_update.append(code)
+        
+        logger.info(f"SQL: 筛选出 {len(need_update)} 只股票需要更新")
         return need_update
 
     @staticmethod
-    def has_updated_today():
+    async def has_updated_today():
         """检查今天是否已更新"""
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
+        async with get_db_conn() as conn:
             today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute(
-                "SELECT status FROM kline_update_log WHERE update_date = %s AND status = 'success'",
-                (today,)
+            result = await conn.fetchval(
+                "SELECT status FROM kline_update_log WHERE update_date = $1 AND status = 'success'",
+                today
             )
-            return cursor.fetchone() is not None
+            return result is not None
 
     @staticmethod
-    def record_update(success_count, total_count, status='success'):
+    async def record_update(success_count, total_count, status='success'):
         """记录更新日志"""
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
+        async with get_db_conn() as conn:
             today = datetime.now().strftime('%Y-%m-%d')
             try:
-                cursor.execute(
+                await conn.execute(
                     '''INSERT INTO kline_update_log
                        (update_date, success_count, total_count, status, created_at)
-                       VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
                        ON CONFLICT (update_date) DO UPDATE
                        SET success_count = EXCLUDED.success_count,
                            total_count = EXCLUDED.total_count,
                            status = EXCLUDED.status''',
-                    (today, success_count, total_count, status)
+                    today, success_count, total_count, status
                 )
-                conn.commit()
                 return True
             except Exception as e:
                 logger.error(f"记录更新日志失败: {e}")
                 return False
 
     @staticmethod
-    def get_last_update_info():
+    async def get_last_update_info():
         """获取最近一次更新信息"""
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        async with get_db_conn() as conn:
+            row = await conn.fetchrow(
                 '''SELECT update_date, success_count, total_count, status, created_at
                    FROM kline_update_log
                    ORDER BY update_date DESC LIMIT 1'''
             )
-            return cursor.fetchone()
+            return row
 
     @staticmethod
-    def export_kline_data(code, start_date=None, end_date=None):
+    async def export_kline_data(code, start_date=None, end_date=None):
         """获取K线数据用于导出
 
         Args:
@@ -186,44 +332,40 @@ class KlineRepository:
         Returns:
             DataFrame: 包含K线数据的DataFrame，列名包括：日期、开盘、收盘、最高、最低、成交量、成交额
         """
-        with get_db_conn() as conn:
-            cursor = conn.cursor()
-
+        async with get_db_conn() as conn:
             # 构建查询条件
             if start_date and end_date:
-                cursor.execute(
+                rows = await conn.fetch(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = %s AND date >= %s AND date <= %s
+                       WHERE code = $1 AND date >= $2 AND date <= $3
                        ORDER BY date ASC''',
-                    (code, start_date, end_date)
+                    code, start_date, end_date
                 )
             elif start_date:
-                cursor.execute(
+                rows = await conn.fetch(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = %s AND date >= %s
+                       WHERE code = $1 AND date >= $2
                        ORDER BY date ASC''',
-                    (code, start_date)
+                    code, start_date
                 )
             elif end_date:
-                cursor.execute(
+                rows = await conn.fetch(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = %s AND date <= %s
+                       WHERE code = $1 AND date <= $2
                        ORDER BY date ASC''',
-                    (code, end_date)
+                    code, end_date
                 )
             else:
-                cursor.execute(
+                rows = await conn.fetch(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = %s
+                       WHERE code = $1
                        ORDER BY date ASC''',
-                    (code,)
+                    code
                 )
-
-            rows = cursor.fetchall()
 
             if rows:
                 df = pd.DataFrame(rows, columns=['日期', '开盘', '收盘', '最高', '最低', '成交量', '成交额'])
