@@ -4,8 +4,24 @@ from pydantic import BaseModel
 from io import BytesIO
 from datetime import datetime
 import pandas as pd
+from utils.logger import get_logger
+
+logger = get_logger('tools_routes')
 
 tools_router = APIRouter()
+
+
+def _clean_nan_values(obj):
+    """递归清理 NaN 值，将其转换为 None"""
+    if isinstance(obj, float):
+        if obj != obj:  # NaN 检查
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _clean_nan_values(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nan_values(item) for item in obj]
+    return obj
 
 
 class Position(BaseModel):
@@ -61,6 +77,7 @@ def calculate_cost(data: CalculateCostRequest):
 @tools_router.get('/export-kline/stocks')
 def get_export_stocks():
     """获取可导出K线数据的股票列表"""
+    logger.info("GET /api/tools/export-kline/stocks - 请求开始")
     try:
         from repositories.monitor_repository import MonitorStockRepository
         from repositories.kline_repository import KlineRepository
@@ -79,12 +96,17 @@ def get_export_stocks():
                 'latest_date': latest_date
             })
 
-        return {
+        response = {
             'status': 'success',
             'data': result
         }
+        # 清理 NaN 值
+        response = _clean_nan_values(response)
+        logger.info(f"GET /api/tools/export-kline/stocks - 返回成功，股票数量: {len(result)}")
+        return response
 
     except Exception as e:
+        logger.error(f"GET /api/tools/export-kline/stocks - 请求失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

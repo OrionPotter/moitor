@@ -1,7 +1,10 @@
 # repositories/kline_repository.py
-from utils.db import get_db_conn, logger
+from utils.db import get_db_conn
+from utils.logger import get_logger
 from datetime import datetime
 import pandas as pd
+
+logger = get_logger('kline_repository')
 
 
 class KlineRepository:
@@ -10,6 +13,7 @@ class KlineRepository:
     @staticmethod
     def save_batch(code, kline_data):
         """批量保存K线数据"""
+        logger.info(f"SQL: 批量插入/更新 {code} 的 K线数据，数据量: {len(kline_data)}")
         with get_db_conn() as conn:
             cursor = conn.cursor()
             try:
@@ -19,32 +23,43 @@ class KlineRepository:
                     for _, row in kline_data.iterrows()
                 ]
                 cursor.executemany(
-                    '''INSERT OR REPLACE INTO stock_kline_data
+                    '''INSERT INTO stock_kline_data
                        (code, date, open, close, high, low, volume, amount, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                       ON CONFLICT (code, date) DO UPDATE
+                       SET open = EXCLUDED.open, close = EXCLUDED.close, high = EXCLUDED.high,
+                           low = EXCLUDED.low, volume = EXCLUDED.volume, amount = EXCLUDED.amount,
+                           updated_at = CURRENT_TIMESTAMP''',
                     insert_data
                 )
                 conn.commit()
+                logger.info(f"SQL: 批量插入/更新成功，影响行数: {cursor.rowcount}")
                 return True, len(insert_data)
             except Exception as e:
+                logger.error(f"SQL: 批量插入/更新失败: {str(e)}")
                 return False, str(e)
 
     @staticmethod
     def get_by_code(code, limit=250):
         """获取K线数据（返回DataFrame）"""
+        logger.info(f"SQL: SELECT date, open, close, high, low, volume, amount FROM stock_kline_data WHERE code = '{code}' ORDER BY date DESC LIMIT {limit}")
         with get_db_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''SELECT date, open, close, high, low, volume, amount
                    FROM stock_kline_data
-                   WHERE code = ?
-                   ORDER BY date DESC LIMIT ?''',
+                   WHERE code = %s
+                   ORDER BY date DESC LIMIT %s''',
                 (code, limit)
             )
             rows = cursor.fetchall()
+            logger.info(f"SQL: 查询返回 {len(rows)} 条记录")
 
             if rows:
-                df = pd.DataFrame(rows, columns=['日期', '开盘', '收盘', '最高', '最低', 'volume', 'amount'])
+                # 将 RealDictRow 转换为字典列表
+                data = [dict(row) for row in rows]
+                df = pd.DataFrame(data)
+                df.columns = ['日期', '开盘', '收盘', '最高', '最低', 'volume', 'amount']
                 return df.iloc[::-1]  # 反转回正序
             return None
 
@@ -56,8 +71,8 @@ class KlineRepository:
             cursor.execute(
                 '''SELECT id, code, date, open, close, high, low, volume, amount, created_at, updated_at
                    FROM stock_kline_data
-                   WHERE code = ?
-                   ORDER BY date DESC LIMIT ?''',
+                   WHERE code = %s
+                   ORDER BY date DESC LIMIT %s''',
                 (code, limit)
             )
             rows = cursor.fetchall()
@@ -75,8 +90,8 @@ class KlineRepository:
                         low=row[6],
                         volume=row[7],
                         amount=row[8],
-                        created_at=datetime.strptime(row[9], '%Y-%m-%d %H:%M:%S') if row[9] else None,
-                        updated_at=datetime.strptime(row[10], '%Y-%m-%d %H:%M:%S') if row[10] else None
+                        created_at=row[9],
+                        updated_at=row[10]
                     )
                     for row in rows[::-1]  # 反转回正序
                 ]
@@ -85,11 +100,17 @@ class KlineRepository:
     @staticmethod
     def get_latest_date(code):
         """获取最新K线日期"""
+        logger.info(f"SQL: SELECT MAX(date) FROM stock_kline_data WHERE code = '{code}'")
         with get_db_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT MAX(date) FROM stock_kline_data WHERE code = ?', (code,))
+            cursor.execute('SELECT MAX(date) FROM stock_kline_data WHERE code = %s', (code,))
             result = cursor.fetchone()
-            return result[0] if result and result[0] else None
+            if result:
+                latest_date = result['max'] if isinstance(result, dict) else result[0]
+                logger.info(f"SQL: 查询返回最新日期: {latest_date}")
+                return latest_date
+            logger.info("SQL: 查询返回 None")
+            return None
 
     @staticmethod
     def get_need_update(days=1):
@@ -113,7 +134,7 @@ class KlineRepository:
             cursor = conn.cursor()
             today = datetime.now().strftime('%Y-%m-%d')
             cursor.execute(
-                'SELECT status FROM kline_update_log WHERE update_date = ? AND status = "success"',
+                "SELECT status FROM kline_update_log WHERE update_date = %s AND status = 'success'",
                 (today,)
             )
             return cursor.fetchone() is not None
@@ -126,9 +147,13 @@ class KlineRepository:
             today = datetime.now().strftime('%Y-%m-%d')
             try:
                 cursor.execute(
-                    '''INSERT OR REPLACE INTO kline_update_log
+                    '''INSERT INTO kline_update_log
                        (update_date, success_count, total_count, status, created_at)
-                       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                       VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                       ON CONFLICT (update_date) DO UPDATE
+                       SET success_count = EXCLUDED.success_count,
+                           total_count = EXCLUDED.total_count,
+                           status = EXCLUDED.status''',
                     (today, success_count, total_count, status)
                 )
                 conn.commit()
@@ -169,7 +194,7 @@ class KlineRepository:
                 cursor.execute(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = ? AND date >= ? AND date <= ?
+                       WHERE code = %s AND date >= %s AND date <= %s
                        ORDER BY date ASC''',
                     (code, start_date, end_date)
                 )
@@ -177,7 +202,7 @@ class KlineRepository:
                 cursor.execute(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = ? AND date >= ?
+                       WHERE code = %s AND date >= %s
                        ORDER BY date ASC''',
                     (code, start_date)
                 )
@@ -185,7 +210,7 @@ class KlineRepository:
                 cursor.execute(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = ? AND date <= ?
+                       WHERE code = %s AND date <= %s
                        ORDER BY date ASC''',
                     (code, end_date)
                 )
@@ -193,7 +218,7 @@ class KlineRepository:
                 cursor.execute(
                     '''SELECT date, open, close, high, low, volume, amount
                        FROM stock_kline_data
-                       WHERE code = ?
+                       WHERE code = %s
                        ORDER BY date ASC''',
                     (code,)
                 )

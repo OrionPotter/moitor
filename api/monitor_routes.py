@@ -6,6 +6,10 @@ from services.monitor_service import MonitorService
 from datetime import datetime
 import threading
 import time
+import json
+from utils.logger import get_logger
+
+logger = get_logger('monitor_routes')
 
 monitor_router = APIRouter()
 
@@ -18,22 +22,38 @@ _monitor_cache = {
 _CACHE_TTL = 60  # 缓存有效期60秒
 
 
+def _clean_nan_values(obj):
+    """递归清理 NaN 值，将其转换为 None"""
+    if isinstance(obj, float):
+        if obj != obj:  # NaN 检查
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _clean_nan_values(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nan_values(item) for item in obj]
+    return obj
+
+
 @monitor_router.get('')
 def get_monitor():
     """获取监控数据"""
+    logger.info("GET /api/monitor - 请求开始")
     try:
         current_time = time.time()
-        
+
         # 检查缓存是否有效
         with _monitor_cache['lock']:
-            if (_monitor_cache['data'] is not None and 
-                _monitor_cache['timestamp'] is not None and 
+            if (_monitor_cache['data'] is not None and
+                _monitor_cache['timestamp'] is not None and
                 current_time - _monitor_cache['timestamp'] < _CACHE_TTL):
+                logger.info("GET /api/monitor - 返回缓存数据")
                 return _monitor_cache['data']
-        
+
         # 缓存过期或不存在，重新获取数据
+        logger.info("GET /api/monitor - 缓存过期，重新获取数据")
         stocks = MonitorService.get_monitor_data()
-        
+
         # 丰富数据
         for stock in stocks:
             min_price, max_price = MonitorService.calculate_reasonable_price(
@@ -64,20 +84,25 @@ def get_monitor():
                 'ema21': stock.get('ema21'),
                 'ema42':  stock.get('ema42'),
             }, stock.get('timeframe'))
-        
+
         result = {
             'status': 'success',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'stocks': stocks
         }
-        
+
+        # 清理 NaN 值
+        result = _clean_nan_values(result)
+
         # 更新缓存
         with _monitor_cache['lock']:
             _monitor_cache['data'] = result
             _monitor_cache['timestamp'] = current_time
-        
+
+        logger.info(f"GET /api/monitor - 返回成功，股票数量: {len(stocks)}")
         return result
     except Exception as e:
+        logger.error(f"GET /api/monitor - 请求失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -5,19 +5,41 @@ from typing import Optional
 from repositories.portfolio_repository import StockRepository
 from repositories.monitor_repository import MonitorStockRepository
 from datetime import datetime
+from utils.logger import get_logger
+
+logger = get_logger('admin_routes')
 
 admin_router = APIRouter()
+
+
+def _clean_nan_values(obj):
+    """递归清理 NaN 值，将其转换为 None"""
+    if isinstance(obj, float):
+        if obj != obj:  # NaN 检查
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _clean_nan_values(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nan_values(item) for item in obj]
+    return obj
+
 
 # ========== 股票管理 ==========
 
 @admin_router.get('/stocks')
 def list_stocks():
     """列出所有股票"""
+    logger.info("GET /api/admin/stocks - 列出所有股票")
     stocks = StockRepository.get_all()
-    return {
+    result = {
         'status': 'success',
         'data': [s.to_dict() for s in stocks]
     }
+    # 清理 NaN 值
+    result = _clean_nan_values(result)
+    logger.info(f"GET /api/admin/stocks - 返回成功，股票数量: {len(stocks)}")
+    return result
 
 class StockCreate(BaseModel):
     code: str
@@ -57,11 +79,16 @@ def delete_stock(code: str):
 @admin_router.get('/monitor-stocks')
 def list_monitor_stocks():
     """列出所有监控股票"""
+    logger.info("GET /api/admin/monitor-stocks - 列出所有监控股票")
     stocks = MonitorStockRepository.get_all()
-    return {
+    result = {
         'status': 'success',
         'data': [s.to_dict() for s in stocks]
     }
+    # 清理 NaN 值
+    result = _clean_nan_values(result)
+    logger.info(f"GET /api/admin/monitor-stocks - 返回成功，监控股票数量: {len(stocks)}")
+    return result
 
 class MonitorStockCreate(BaseModel):
     code: str
@@ -125,10 +152,13 @@ def list_xueqiu_cubes():
     """列出所有雪球组合"""
     from repositories.xueqiu_repository import XueqiuCubeRepository
     cubes = XueqiuCubeRepository.get_all()
-    return {
+    result = {
         'status': 'success',
         'data': [cube.to_dict() for cube in cubes]
     }
+    # 清理 NaN 值
+    result = _clean_nan_values(result)
+    return result
 
 class XueqiuCubeCreate(BaseModel):
     cube_symbol: str

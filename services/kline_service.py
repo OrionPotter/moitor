@@ -128,21 +128,21 @@ class KlineService:
             
             # 重采样处理
             if period == '2d':
-                df['日期'] = pd.to_datetime(df['日期'])
+                df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
                 df = df.set_index('日期')
                 df = df.resample('2B').agg({
                     '开盘': 'first', '收盘': 'last', '最高': 'max', '最低': 'min', 'amount': 'sum'
                 }).dropna()
                 df = df.reset_index()
-                df['日期'] = df['日期']. dt.strftime('%Y-%m-%d')
+                df['日期'] = df['日期'].dt.strftime('%Y-%m-%d')
             
             elif period == '3d': 
-                df['日期'] = pd.to_datetime(df['日期'])
+                df['日期'] = pd.to_datetime(df['日期'], errors='coerce')
                 df = df.set_index('日期')
                 df = df.resample('3B').agg({
-                    '开盘': 'first', '收盘':  'last', '最高':  'max', '最低':  'min', 'amount':  'sum'
+                    '开盘': 'first', '收盘': 'last', '最高': 'max', '最低': 'min', 'amount': 'sum'
                 }).dropna()
-                df = df. reset_index()
+                df = df.reset_index()
                 df['日期'] = df['日期'].dt.strftime('%Y-%m-%d')
             
             if len(df) > count:

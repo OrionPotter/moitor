@@ -85,29 +85,34 @@ class PortfolioService:
     @staticmethod
     def get_portfolio_data():
         """获取完整投资组合数据
-        
+
         Returns:
             tuple: (rows_list, summary_dict)
         """
+        import time
+        start_time = time.time()
+
         # 获取所有股票
         stocks = StockRepository.get_all()
         if not stocks:
+            logger.warning("投资组合为空")
             return [], {'market_value': 0, 'profit':  0, 'annual_dividend': 0}
 
         stock_codes = [stock.code for stock in stocks]
-        
+        logger.info(f"开始获取 {len(stock_codes)} 只股票的实时价格")
+
         # 使用asyncio运行异步函数
         async def fetch_all():
             headers = PortfolioService._get_headers()
             connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
-            
+
             async with aiohttp.ClientSession(headers=headers, connector=connector, trust_env=False) as session:
                 # 创建所有异步任务
                 tasks = [PortfolioService._fetch_stock_price(session, code) for code in stock_codes]
-                
+
                 # 并发执行所有任务
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                
+
                 # 处理结果
                 processed_results = []
                 for result in results:
@@ -116,9 +121,9 @@ class PortfolioService:
                         processed_results.append((None, None, None, None))
                     else:
                         processed_results.append(result)
-                
+
                 return processed_results
-        
+
         results = asyncio.run(fetch_all())
 
         # 构建股票数据映射
@@ -152,16 +157,19 @@ class PortfolioService:
                 'dividend_yield': data.get('div_yield') or 0,
             }
             row['annual_dividend_income'] = round(row['dividend_per_share'] * shares, 2)
-            
+
             rows.append(row)
             total['market_value'] += row['market_value']
             total['profit'] += row['profit']
             total['annual_dividend'] += row['annual_dividend_income']
-        
+
         # 计算总股息率：每年分红金额总计 / 总市值总计
         if total['market_value'] > 0:
             total['dividend_yield'] = round(total['annual_dividend'] / total['market_value'] * 100, 2)
         else:
             total['dividend_yield'] = 0
-        
+
+        elapsed = time.time() - start_time
+        logger.info(f"投资组合数据获取完成，总市值: {total['market_value']}, 盈亏: {total['profit']}, 耗时: {elapsed:.2f}秒")
+
         return rows, total

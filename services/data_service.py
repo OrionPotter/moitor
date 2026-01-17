@@ -231,11 +231,11 @@ class DataService:
     @staticmethod
     def get_monitor_data():
         """获取监控数据"""
+        start_time = time.time()
+        logger.info("开始获取监控数据...")
         from repositories.monitor_repository import MonitorStockRepository
         from repositories.kline_repository import KlineRepository
 
-        logger.info("开始获取监控数据...")
-        
         # 清理过期缓存
         deleted = MonitorDataCacheRepository.clean_old_data(1)
         if deleted > 0:
@@ -245,7 +245,7 @@ class DataService:
         monitor_stocks = MonitorStockRepository.get_enabled()
 
         logger.info(f"从数据库加载了 {len(monitor_stocks)} 只监控股票")
-        
+
         results = []
 
         # 并发处理，保持原始顺序
@@ -263,29 +263,34 @@ class DataService:
                     result = future.result()
                     if result:
                         results.append(result)
+                        logger.debug(f"成功处理 {result['code']} {result['name']}")
+                    else:
+                        logger.warning("处理返回 None，跳过")
                 except Exception as e:
                     logger.error(f"并发处理异常: {e}")
-        
+
         # 获取EPS数据
         stocks_need_eps = [r for r in results if r.get('eps_forecast') is None]
-        
+
         if stocks_need_eps:
             logger.info(f"开始获取 {len(stocks_need_eps)} 只股票的EPS预测...")
-            
+
             with ThreadPoolExecutor(max_workers=5) as executor:
                 eps_futures = {
                     executor.submit(DataService.get_eps_forecast, r['code']): r
                     for r in stocks_need_eps
                 }
-                
+
                 for future in concurrent.futures.as_completed(eps_futures):
                     result = eps_futures[future]
                     try:
                         eps = future.result()
                         result['eps_forecast'] = eps
-                    except Exception as e: 
+                        logger.debug(f"成功获取 {result['code']} 的EPS: {eps}")
+                    except Exception as e:
                         logger.error(f"获取 {result['code']} EPS失败: {e}")
                         result['eps_forecast'] = None
-        
-        logger.info(f"获取监控数据完成，共 {len(results)} 只股票")
+
+        elapsed = time.time() - start_time
+        logger.info(f"获取监控数据完成，共 {len(results)} 只股票，耗时: {elapsed:.2f}秒")
         return results
